@@ -1,0 +1,58 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/brevitas-systems/brevitas/internal/service"
+)
+
+func (a *App) cmdStatus(ctx context.Context, _ []string) error {
+	a.say("Brevitas status\n")
+
+	// Service.
+	if mgr, err := a.manager(); err == nil {
+		st, _ := mgr.Status(ctx)
+		a.statusLine("Service", string(st), st == service.StateRunning)
+	}
+
+	// Proxy reachability.
+	if err := a.proxyHealth(ctx); err == nil {
+		a.statusLine("Proxy", a.Cfg.ProxyURL(), true)
+	} else {
+		a.statusLine("Proxy", "unreachable", false)
+	}
+
+	// API key.
+	a.statusLine("API key", a.Keyring.Backend(), a.hasKey(ctx))
+
+	// Optimizer.
+	if err := a.optimizerClient().Health(ctx); err == nil {
+		a.statusLine("brevitas-systems", "reachable", true)
+	} else {
+		a.statusLine("brevitas-systems", "not running", false)
+	}
+
+	// Providers.
+	a.say("\nConfigured tools:")
+	any := false
+	for _, s := range a.registry().Statuses(ctx) {
+		if s.State == provider.StateConfigured {
+			a.ok("%s", s.Name)
+			any = true
+		}
+	}
+	if !any {
+		a.say("  (none configured yet — run 'brevitas install')")
+	}
+	return nil
+}
+
+func (a *App) statusLine(label, detail string, ok bool) {
+	glyph := "✗"
+	if ok {
+		glyph = "✓"
+	}
+	fmt.Fprintf(a.Out, "  %s %-16s %s\n", glyph, label, detail)
+}

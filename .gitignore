@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.out
+*.test
+*.log
+.DS_Store
+brevitas
+brevitas-*
+!Formula/
+coverage.*
