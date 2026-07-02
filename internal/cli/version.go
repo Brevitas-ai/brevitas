@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/brevitas-systems/brevitas/internal/version"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 func (a *App) cmdVersion(_ context.Context, _ []string) error {

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brevitas-systems/brevitas/internal/provider"
-	"github.com/brevitas-systems/brevitas/internal/service"
-	"github.com/brevitas-systems/brevitas/internal/version"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/service"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // check is a single diagnostic result.

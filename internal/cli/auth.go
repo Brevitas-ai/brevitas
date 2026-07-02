@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/brevitas-systems/brevitas/internal/keyring"
+	"github.com/Brevitas-ai/brevitas/internal/keyring"
 )
 
 func (a *App) cmdLogin(ctx context.Context, args []string) error {

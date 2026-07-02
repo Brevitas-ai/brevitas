@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/brevitas-systems/brevitas/internal/detect"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/detect"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 const reason = "Jan stores engine settings in its app data folder; add a remote " +

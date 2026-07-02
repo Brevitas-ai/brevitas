@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/brevitas-systems/brevitas/internal/logging"
-	"github.com/brevitas-systems/brevitas/internal/proxy"
-	"github.com/brevitas-systems/brevitas/internal/service"
+	"github.com/Brevitas-ai/brevitas/internal/logging"
+	"github.com/Brevitas-ai/brevitas/internal/proxy"
+	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
 func (a *App) manager() (service.Manager, error) {

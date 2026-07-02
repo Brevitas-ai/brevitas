@@ -11,8 +11,8 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/brevitas-systems/brevitas/internal/detect"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/detect"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 const reason = "LM Studio is a local inference server (an upstream), not a client " +

@@ -2,7 +2,7 @@
 //
 // Values are overridden at build time via -ldflags, e.g.:
 //
-//	go build -ldflags "-X github.com/brevitas-systems/brevitas/internal/version.Version=1.2.3"
+//	go build -ldflags "-X github.com/Brevitas-ai/brevitas/internal/version.Version=1.2.3"
 package version
 
 import (

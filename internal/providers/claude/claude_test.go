@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 func TestClaudeInstallValidateUninstall(t *testing.T) {

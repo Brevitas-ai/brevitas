@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/brevitas-systems/brevitas/internal/provider"
-	"github.com/brevitas-systems/brevitas/internal/service"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
 func (a *App) cmdStatus(ctx context.Context, _ []string) error {

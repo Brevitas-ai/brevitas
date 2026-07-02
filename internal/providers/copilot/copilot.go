@@ -21,8 +21,8 @@ package copilot
 import (
 	"context"
 
-	"github.com/brevitas-systems/brevitas/internal/detect"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/detect"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 const reason = "GitHub Copilot uses hard-coded GitHub endpoints with short-lived, " +

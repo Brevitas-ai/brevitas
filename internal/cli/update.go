@@ -5,7 +5,7 @@ import (
 	"flag"
 	"strings"
 
-	"github.com/brevitas-systems/brevitas/internal/optimizer"
+	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
 // cmdUpdate checks whether the brevitas-systems package is outdated and offers

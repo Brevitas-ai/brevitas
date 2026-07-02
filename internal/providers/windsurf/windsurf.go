@@ -10,8 +10,8 @@ package windsurf
 import (
 	"context"
 
-	"github.com/brevitas-systems/brevitas/internal/detect"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/detect"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 const reason = "Windsurf routes AI traffic through Codeium's authenticated servers " +

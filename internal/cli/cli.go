@@ -14,12 +14,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
-	"github.com/brevitas-systems/brevitas/internal/keyring"
-	"github.com/brevitas-systems/brevitas/internal/logging"
-	"github.com/brevitas-systems/brevitas/internal/optimizer"
-	"github.com/brevitas-systems/brevitas/internal/provider"
-	"github.com/brevitas-systems/brevitas/internal/providers"
+	"github.com/Brevitas-ai/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/keyring"
+	"github.com/Brevitas-ai/brevitas/internal/logging"
+	"github.com/Brevitas-ai/brevitas/internal/optimizer"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/providers"
 )
 
 // App holds the injected dependencies shared by every subcommand.

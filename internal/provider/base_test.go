@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/config"
 )
 
 func testBase(t *testing.T, name string) (*Base, config.Dirs) {

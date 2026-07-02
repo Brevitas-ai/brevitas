@@ -4,15 +4,15 @@
 # NOT bundled here — `brevitas install` / `brevitas update` manage it via pip.
 #
 # For a tap: place this file at Formula/brevitas.rb in your
-# homebrew-brevitas tap repo and run `brew install brevitas-systems/brevitas/brevitas`.
+# homebrew-brevitas tap repo and run `brew install Brevitas-ai/brevitas/brevitas`.
 class Brevitas < Formula
   desc "Middleware installer that routes AI coding assistants through Brevitas"
-  homepage "https://github.com/brevitas-systems/brevitas"
+  homepage "https://github.com/Brevitas-ai/brevitas"
   license "MIT"
-  head "https://github.com/brevitas-systems/brevitas.git", branch: "main"
+  head "https://github.com/Brevitas-ai/brevitas.git", branch: "main"
 
   # For tagged releases, point url/sha256 at the release tarball:
-  #   url "https://github.com/brevitas-systems/brevitas/archive/refs/tags/v0.1.0.tar.gz"
+  #   url "https://github.com/Brevitas-ai/brevitas/archive/refs/tags/v0.1.0.tar.gz"
   #   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
   version "0.1.0"
 
@@ -21,8 +21,8 @@ class Brevitas < Formula
   def install
     ldflags = %W[
       -s -w
-      -X github.com/brevitas-systems/brevitas/internal/version.Version=#{version}
-      -X github.com/brevitas-systems/brevitas/internal/version.Date=#{time.iso8601}
+      -X github.com/Brevitas-ai/brevitas/internal/version.Version=#{version}
+      -X github.com/Brevitas-ai/brevitas/internal/version.Date=#{time.iso8601}
     ]
     system "go", "build", *std_go_args(ldflags: ldflags, output: bin/"brevitas"), "./cmd/brevitas"
   end

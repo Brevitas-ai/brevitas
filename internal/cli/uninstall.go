@@ -4,8 +4,8 @@ import (
 	"context"
 	"flag"
 
-	"github.com/brevitas-systems/brevitas/internal/keyring"
-	"github.com/brevitas-systems/brevitas/internal/service"
+	"github.com/Brevitas-ai/brevitas/internal/keyring"
+	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
 // cmdUninstall restores every managed config, removes the service, and

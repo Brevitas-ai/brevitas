@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 // cmdRepair re-applies configuration for every previously-enabled provider and

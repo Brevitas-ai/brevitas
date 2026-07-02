@@ -15,8 +15,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
-	"github.com/brevitas-systems/brevitas/internal/optimizer"
+	"github.com/Brevitas-ai/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
 // APIKeyFunc returns the Brevitas API key used for upstream auth.

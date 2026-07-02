@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
-	"github.com/brevitas-systems/brevitas/internal/version"
+	"github.com/Brevitas-ai/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // Request is a provider request handed to brevitas-systems for optimization.

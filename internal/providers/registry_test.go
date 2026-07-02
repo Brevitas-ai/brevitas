@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 func testEnv(t *testing.T) *provider.Env {

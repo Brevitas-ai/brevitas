@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/brevitas-systems/brevitas/internal/detect"
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/detect"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 // Provider integrates Aider.

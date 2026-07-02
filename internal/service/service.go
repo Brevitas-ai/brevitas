@@ -12,7 +12,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/config"
 )
 
 // State is the lifecycle state of the background service.

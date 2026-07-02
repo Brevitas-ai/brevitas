@@ -12,7 +12,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/brevitas-systems/brevitas/internal/config"
+	"github.com/Brevitas-ai/brevitas/internal/config"
 )
 
 // Support classifies how completely Brevitas can integrate with a tool.

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/brevitas-systems/brevitas/internal/provider"
+	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
 func (a *App) cmdProviders(ctx context.Context, args []string) error {
