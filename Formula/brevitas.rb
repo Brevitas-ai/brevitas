@@ -9,12 +9,9 @@ class Brevitas < Formula
   desc "Middleware installer that routes AI coding assistants through Brevitas"
   homepage "https://github.com/Brevitas-ai/brevitas"
   license "MIT"
+  url "https://github.com/Brevitas-ai/brevitas/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "1c1557e4ea68d668d6f0b1d28305fd2971434166ad934e8e20e3ece47f76cf2f"
   head "https://github.com/Brevitas-ai/brevitas.git", branch: "main"
-
-  # For tagged releases, point url/sha256 at the release tarball:
-  #   url "https://github.com/Brevitas-ai/brevitas/archive/refs/tags/v0.1.0.tar.gz"
-  #   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
-  version "0.1.0"
 
   depends_on "go" => :build
 
