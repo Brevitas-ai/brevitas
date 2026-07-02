@@ -1,5 +1,5 @@
 BINARY      := brevitas
-PKG         := github.com/brevitas-systems/brevitas
+PKG         := github.com/Brevitas-ai/brevitas
 CMD         := ./cmd/brevitas
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.1.0-dev)
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
