@@ -1,0 +1,89 @@
+name: release
+
+# On every semver tag push, build prebuilt binaries for macOS/Linux
+# (pure Go, CGO disabled — no C toolchain needed) and publish them as a
+# GitHub Release. The Homebrew formula downloads these artifacts, so users
+# never compile anything.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build release binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PKG="github.com/Brevitas-ai/brevitas/internal/version"
+          LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            name="brevitas-${VERSION}-${os}-${arch}"
+            mkdir -p "dist/${name}"
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" \
+              -o "dist/${name}/brevitas" ./cmd/brevitas
+            cp LICENSE README.md "dist/${name}/"
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" .
+          done
+          ( cd dist && shasum -a 256 *.tar.gz > checksums.txt )
+          cat dist/checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          generate_release_notes: true
+
+      # Optional: auto-bump the Homebrew tap formula. Requires a repo secret
+      # TAP_GITHUB_TOKEN (a PAT with contents:write on
+      # Brevitas-ai/homebrew-brevitas). Skipped automatically if unset.
+      - name: Bump Homebrew tap
+        if: ${{ env.TAP_TOKEN != '' }}
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          d_arm="$(shasum -a 256 dist/brevitas-${VERSION}-darwin-arm64.tar.gz | cut -d' ' -f1)"
+          d_amd="$(shasum -a 256 dist/brevitas-${VERSION}-darwin-amd64.tar.gz | cut -d' ' -f1)"
+          l_arm="$(shasum -a 256 dist/brevitas-${VERSION}-linux-arm64.tar.gz  | cut -d' ' -f1)"
+          l_amd="$(shasum -a 256 dist/brevitas-${VERSION}-linux-amd64.tar.gz  | cut -d' ' -f1)"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/Brevitas-ai/homebrew-brevitas.git" tap
+          f="tap/Formula/brevitas.rb"
+          python3 - "$f" "$VERSION" "$d_arm" "$d_amd" "$l_arm" "$l_amd" <<'PY'
+          import re, sys
+          f, ver, d_arm, d_amd, l_arm, l_amd = sys.argv[1:7]
+          s = open(f).read()
+          s = re.sub(r'version "[^"]+"', f'version "{ver}"', s, count=1)
+          s = re.sub(r'/download/v[^/]+/brevitas-[^-]+-', f'/download/v{ver}/brevitas-{ver}-', s)
+          for arch, sha in (("darwin-arm64", d_arm), ("darwin-amd64", d_amd),
+                            ("linux-arm64", l_arm), ("linux-amd64", l_amd)):
+              s = re.sub(rf'(brevitas-{ver}-{arch}\.tar\.gz"\n\s*sha256 ")[0-9a-f]{{64}}', rf'\g<1>{sha}', s)
+          open(f, "w").write(s)
+          PY
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "brevitas ${VERSION}" && git push
