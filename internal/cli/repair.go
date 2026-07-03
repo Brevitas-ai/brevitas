@@ -36,12 +36,8 @@ func (a *App) cmdRepair(ctx context.Context, _ []string) error {
 		}
 	}
 
-	// Ensure service is installed and (re)started.
-	if err := a.installService(ctx); err != nil {
-		a.fail("service: %v", err)
-	} else {
-		a.ok("service restarted")
-	}
+	// Ensure services are installed and (re)started.
+	a.installServices(ctx)
 
 	a.say("\nRepair complete.")
 	return nil

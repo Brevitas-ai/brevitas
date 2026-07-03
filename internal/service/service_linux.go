@@ -21,7 +21,7 @@ type systemdManager struct {
 
 func newManager(spec Spec) Manager {
 	home, _ := os.UserHomeDir()
-	unit := "brevitas.service"
+	unit := "brevitas-" + spec.Name + ".service"
 	return &systemdManager{
 		spec:     spec,
 		unitName: unit,
@@ -32,7 +32,7 @@ func newManager(spec Spec) Manager {
 func (m *systemdManager) Backend() string { return "systemd (--user unit)" }
 
 const unitTemplate = `[Unit]
-Description=Brevitas local optimization proxy
+Description={{.Description}}
 After=network-online.target
 Wants=network-online.target
 
@@ -64,9 +64,10 @@ func (m *systemdManager) Install(ctx context.Context) error {
 	tmpl := template.Must(template.New("unit").Parse(unitTemplate))
 	var buf bytes.Buffer
 	data := map[string]any{
-		"ExecStart":  execStart,
-		"StdoutPath": filepath.Join(m.spec.Dirs.Logs, "proxy.out.log"),
-		"StderrPath": filepath.Join(m.spec.Dirs.Logs, "proxy.err.log"),
+		"Description": m.spec.Description,
+		"ExecStart":   execStart,
+		"StdoutPath":  filepath.Join(m.spec.Dirs.Logs, m.spec.Name+".out.log"),
+		"StderrPath":  filepath.Join(m.spec.Dirs.Logs, m.spec.Name+".err.log"),
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return err

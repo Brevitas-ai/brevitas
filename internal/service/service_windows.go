@@ -26,7 +26,7 @@ type schtasksManager struct {
 }
 
 func newManager(spec Spec) Manager {
-	return &schtasksManager{spec: spec, taskName: "Brevitas Proxy"}
+	return &schtasksManager{spec: spec, taskName: spec.Label}
 }
 
 func (m *schtasksManager) Backend() string { return "Windows Task Scheduler (logon task)" }

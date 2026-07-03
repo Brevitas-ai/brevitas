@@ -5,7 +5,6 @@ import (
 	"flag"
 
 	"github.com/Brevitas-ai/brevitas/internal/keyring"
-	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
 // cmdUninstall restores every managed config, removes the service, and
@@ -32,13 +31,14 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 		}
 	}
 
-	// 2. Stop and remove the service.
-	if spec, err := service.DefaultSpec(a.Dirs); err == nil {
-		mgr := service.NewManager(spec)
-		if err := mgr.Uninstall(ctx); err != nil {
-			a.fail("service: %v", err)
-		} else {
-			a.ok("background service removed")
+	// 2. Stop and remove the background services (proxy + optimizer).
+	if svcs, err := a.services(); err == nil {
+		for _, s := range svcs {
+			if err := s.mgr.Uninstall(ctx); err != nil {
+				a.fail("%s service: %v", s.name, err)
+			} else {
+				a.ok("%s service removed", s.name)
+			}
 		}
 	}
 

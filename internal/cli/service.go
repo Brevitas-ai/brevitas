@@ -8,56 +8,161 @@ import (
 	"syscall"
 
 	"github.com/Brevitas-ai/brevitas/internal/logging"
+	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 	"github.com/Brevitas-ai/brevitas/internal/proxy"
 	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
-func (a *App) manager() (service.Manager, error) {
-	spec, err := service.DefaultSpec(a.Dirs)
+// managedService pairs a service with its display name.
+type managedService struct {
+	name string
+	mgr  service.Manager
+}
+
+// proxyManager returns the manager for the proxy service.
+func (a *App) proxyManager() (service.Manager, error) {
+	spec, err := service.ProxySpec(a.Dirs)
 	if err != nil {
 		return nil, err
 	}
 	return service.NewManager(spec), nil
 }
 
-func (a *App) cmdStart(ctx context.Context, _ []string) error {
-	mgr, err := a.manager()
+// optimizerManager returns the manager for the optimizer (brain) service.
+func (a *App) optimizerManager() (service.Manager, error) {
+	spec, err := service.OptimizerSpec(a.Dirs)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return service.NewManager(spec), nil
+}
+
+// manager returns the proxy manager (kept for status/doctor callers).
+func (a *App) manager() (service.Manager, error) { return a.proxyManager() }
+
+// services returns both managed services, proxy first.
+func (a *App) services() ([]managedService, error) {
+	pm, err := a.proxyManager()
+	if err != nil {
+		return nil, err
+	}
+	om, err := a.optimizerManager()
+	if err != nil {
+		return nil, err
+	}
+	return []managedService{{"proxy", pm}, {"optimizer", om}}, nil
+}
+
+// optimizerAvailable reports whether a Python with the brevitas package exists,
+// so we only run the optimizer service when it can actually work.
+func (a *App) optimizerAvailable(ctx context.Context) bool {
+	return optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin) != ""
+}
+
+// ensureStarted installs the service if needed, then starts it.
+func (a *App) ensureStarted(ctx context.Context, mgr service.Manager) error {
 	if st, _ := mgr.Status(ctx); st == service.StateNotInstalled {
 		if err := mgr.Install(ctx); err != nil {
 			return err
 		}
 	}
-	if err := mgr.Start(ctx); err != nil {
+	return mgr.Start(ctx)
+}
+
+// installServices installs and starts the proxy, plus the optimizer when the
+// brevitas package is available. It prints a line per service.
+func (a *App) installServices(ctx context.Context) {
+	pm, err := a.proxyManager()
+	if err != nil {
+		a.fail("proxy service: %v", err)
+	} else if err := a.ensureStarted(ctx, pm); err != nil {
+		a.fail("proxy service: %v", err)
+	} else {
+		a.ok("Background service installed")
+		a.ok("Proxy started")
+	}
+
+	om, err := a.optimizerManager()
+	if err != nil {
+		return
+	}
+	if a.optimizerAvailable(ctx) {
+		if err := a.ensureStarted(ctx, om); err != nil {
+			a.fail("optimizer service: %v", err)
+		} else {
+			a.ok("Optimizer started (brevitas-systems)")
+		}
+	} else {
+		a.warn("Optimizer not started — brevitas-systems not found.")
+		a.warn("  Run: pip install brevitas-systems && brevitas repair")
+	}
+}
+
+func (a *App) cmdStart(ctx context.Context, _ []string) error {
+	pm, err := a.proxyManager()
+	if err != nil {
 		return err
 	}
-	a.ok("service started (%s)", mgr.Backend())
+	if err := a.ensureStarted(ctx, pm); err != nil {
+		return err
+	}
+	a.ok("proxy started (%s)", pm.Backend())
+
+	om, err := a.optimizerManager()
+	if err != nil {
+		return err
+	}
+	if a.optimizerAvailable(ctx) {
+		if err := a.ensureStarted(ctx, om); err != nil {
+			a.fail("optimizer: %v", err)
+		} else {
+			a.ok("optimizer started")
+		}
+	} else {
+		a.warn("optimizer not started — brevitas-systems not found (pip install brevitas-systems)")
+	}
 	return nil
 }
 
 func (a *App) cmdStop(ctx context.Context, _ []string) error {
-	mgr, err := a.manager()
+	svcs, err := a.services()
 	if err != nil {
 		return err
 	}
-	if err := mgr.Stop(ctx); err != nil {
-		return err
+	for _, s := range svcs {
+		if st, _ := s.mgr.Status(ctx); st == service.StateNotInstalled {
+			continue
+		}
+		if err := s.mgr.Stop(ctx); err != nil {
+			a.fail("%s: %v", s.name, err)
+		} else {
+			a.ok("%s stopped", s.name)
+		}
 	}
-	a.ok("service stopped")
 	return nil
 }
 
 func (a *App) cmdRestart(ctx context.Context, _ []string) error {
-	mgr, err := a.manager()
+	svcs, err := a.services()
 	if err != nil {
 		return err
 	}
-	if err := mgr.Restart(ctx); err != nil {
-		return err
+	for _, s := range svcs {
+		// Skip the optimizer entirely when its runtime isn't available.
+		if s.name == "optimizer" && !a.optimizerAvailable(ctx) {
+			a.warn("optimizer skipped — brevitas-systems not found")
+			continue
+		}
+		if err := a.ensureStarted(ctx, s.mgr); err != nil {
+			a.fail("%s: %v", s.name, err)
+			continue
+		}
+		if err := s.mgr.Restart(ctx); err != nil {
+			a.fail("%s: %v", s.name, err)
+		} else {
+			a.ok("%s restarted", s.name)
+		}
 	}
-	a.ok("service restarted")
 	return nil
 }
 

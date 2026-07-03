@@ -11,10 +11,12 @@ import (
 func (a *App) cmdStatus(ctx context.Context, _ []string) error {
 	a.say("Brevitas status\n")
 
-	// Service.
-	if mgr, err := a.manager(); err == nil {
-		st, _ := mgr.Status(ctx)
-		a.statusLine("Service", string(st), st == service.StateRunning)
+	// Services (proxy + optimizer).
+	if svcs, err := a.services(); err == nil {
+		for _, s := range svcs {
+			st, _ := s.mgr.Status(ctx)
+			a.statusLine("Service: "+s.name, string(st), st == service.StateRunning)
+		}
 	}
 
 	// Proxy reachability.

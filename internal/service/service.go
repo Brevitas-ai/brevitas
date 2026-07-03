@@ -25,8 +25,11 @@ const (
 	StateUnknown      State = "unknown"
 )
 
-// Label is the reverse-DNS service identifier used across platforms.
-const Label = "com.brevitas.proxy"
+// Reverse-DNS service identifiers used across platforms.
+const (
+	LabelProxy     = "com.brevitas.proxy"
+	LabelOptimizer = "com.brevitas.optimizer"
+)
 
 // Manager installs and controls the background service.
 type Manager interface {
@@ -46,27 +49,48 @@ type Manager interface {
 	Backend() string
 }
 
-// Spec describes how to run the service process.
+// Spec describes how to run a managed service process.
 type Spec struct {
+	// Name is a short identifier used for file names (e.g. "proxy").
+	Name string
+	// Label is the reverse-DNS identifier (launchd/Task Scheduler).
+	Label string
+	// Description is a human-readable label (systemd Description, etc.).
+	Description string
 	// Executable is the absolute path to the brevitas binary.
 	Executable string
-	// Args are the arguments that start the proxy (e.g. ["serve"]).
+	// Args are the arguments that start this service (e.g. ["serve"]).
 	Args []string
 	// Dirs provides log locations.
 	Dirs config.Dirs
 }
 
-// DefaultSpec builds a Spec that runs `brevitas serve` using the current
-// executable path.
-func DefaultSpec(dirs config.Dirs) (Spec, error) {
+// ProxySpec builds the spec for the local optimization proxy (`brevitas serve`).
+func ProxySpec(dirs config.Dirs) (Spec, error) {
+	return specFor("proxy", LabelProxy, "Brevitas local optimization proxy", []string{"serve"}, dirs)
+}
+
+// OptimizerSpec builds the spec for the brevitas-systems optimizer adapter
+// (`brevitas optimizer`) — the optimization brain the proxy calls.
+func OptimizerSpec(dirs config.Dirs) (Spec, error) {
+	return specFor("optimizer", LabelOptimizer, "Brevitas optimizer (brevitas-systems)", []string{"optimizer"}, dirs)
+}
+
+// DefaultSpec is retained for compatibility and returns the proxy spec.
+func DefaultSpec(dirs config.Dirs) (Spec, error) { return ProxySpec(dirs) }
+
+func specFor(name, label, desc string, args []string, dirs config.Dirs) (Spec, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return Spec{}, err
 	}
 	return Spec{
-		Executable: exe,
-		Args:       []string{"serve"},
-		Dirs:       dirs,
+		Name:        name,
+		Label:       label,
+		Description: desc,
+		Executable:  exe,
+		Args:        args,
+		Dirs:        dirs,
 	}, nil
 }
 

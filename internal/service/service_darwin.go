@@ -23,8 +23,8 @@ func newManager(spec Spec) Manager {
 	home, _ := os.UserHomeDir()
 	return &launchdManager{
 		spec:  spec,
-		label: Label,
-		plist: filepath.Join(home, "Library", "LaunchAgents", Label+".plist"),
+		label: spec.Label,
+		plist: filepath.Join(home, "Library", "LaunchAgents", spec.Label+".plist"),
 	}
 }
 
@@ -69,8 +69,8 @@ func (m *launchdManager) Install(ctx context.Context) error {
 		"Label":      m.label,
 		"Executable": m.spec.Executable,
 		"Args":       m.spec.Args,
-		"StdoutPath": filepath.Join(m.spec.Dirs.Logs, "proxy.out.log"),
-		"StderrPath": filepath.Join(m.spec.Dirs.Logs, "proxy.err.log"),
+		"StdoutPath": filepath.Join(m.spec.Dirs.Logs, m.spec.Name+".out.log"),
+		"StderrPath": filepath.Join(m.spec.Dirs.Logs, m.spec.Name+".err.log"),
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return err

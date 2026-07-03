@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/Brevitas-ai/brevitas/internal/provider"
-	"github.com/Brevitas-ai/brevitas/internal/service"
 )
 
 // cmdInstall runs the end-to-end installation flow.
@@ -95,14 +94,9 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	// 4. Background service.
+	// 4. Background services (proxy + optimizer brain).
 	if !*noService {
-		if err := a.installService(ctx); err != nil {
-			a.fail("background service: %v", err)
-		} else {
-			a.ok("Background service installed")
-			a.ok("Proxy started")
-		}
+		a.installServices(ctx)
 	}
 
 	// 5. Diagnostics.
@@ -144,19 +138,6 @@ func (a *App) ensureAPIKey(ctx context.Context, provided string) error {
 	}
 	a.ok("API key stored in %s", a.Keyring.Backend())
 	return nil
-}
-
-// installService installs and starts the background proxy service.
-func (a *App) installService(ctx context.Context) error {
-	spec, err := service.DefaultSpec(a.Dirs)
-	if err != nil {
-		return err
-	}
-	mgr := service.NewManager(spec)
-	if err := mgr.Install(ctx); err != nil {
-		return err
-	}
-	return mgr.Start(ctx)
 }
 
 func providerNames(ps []provider.Provider) []string {
