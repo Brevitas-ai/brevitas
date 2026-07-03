@@ -32,10 +32,14 @@ func (s *Systems) Installed(ctx context.Context) bool {
 }
 
 // Version returns the installed brevitas-systems version string.
+//
+// The pip distribution is named "brevitas-systems" while its importable module
+// is "brevitas", so we read the version from package metadata (which also
+// avoids importing the package just to check it exists).
 func (s *Systems) Version(ctx context.Context) (string, error) {
-	out, err := s.run(ctx, "-c", "import brevitas_systems as b; print(getattr(b,'__version__','0.0.0'))")
+	out, err := s.run(ctx, "-c", "import importlib.metadata as m; print(m.version('brevitas-systems'))")
 	if err != nil {
-		return "", fmt.Errorf("brevitas-systems not importable via %s: %w", s.PythonBin, err)
+		return "", fmt.Errorf("brevitas-systems not installed for %s: %w", s.PythonBin, err)
 	}
 	return strings.TrimSpace(out), nil
 }
