@@ -150,6 +150,30 @@ func TestProxyStreamsSSE(t *testing.T) {
 	}
 }
 
+func TestProxyEmptyBodySkipsOptimizer(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+
+	opt := &fakeOptimizer{}
+	ts := newTestServer(t, upstream.URL, opt)
+	defer ts.Close()
+
+	// Empty body must not attempt optimization (json.RawMessage("") would error).
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if opt.called {
+		t.Error("optimizer should be skipped for an empty body")
+	}
+}
+
 func TestProxyUnknownRouteIs404(t *testing.T) {
 	ts := newTestServer(t, "http://127.0.0.1:1", &fakeOptimizer{})
 	defer ts.Close()

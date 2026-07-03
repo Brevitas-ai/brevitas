@@ -61,10 +61,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("no api key available", "err", keyErr)
 	}
 
-	// Optimize via brevitas-systems (fail-open).
+	// Optimize via brevitas-systems (fail-open). Only attempt when the body is
+	// non-empty, valid JSON — GET/empty/non-JSON requests (e.g. /v1/models,
+	// token counting, health) have nothing to optimize and would otherwise
+	// error on json.RawMessage marshaling.
 	outBody := body
 	optHeaders := map[string]string{}
-	if s.opt != nil {
+	if s.opt != nil && len(body) > 0 && json.Valid(body) {
 		optReq := &optimizer.Request{
 			Provider: string(rt.Family),
 			Model:    meta.Model,
