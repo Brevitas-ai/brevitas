@@ -53,10 +53,20 @@ func (a *App) services() ([]managedService, error) {
 	return []managedService{{"proxy", pm}, {"optimizer", om}}, nil
 }
 
-// optimizerAvailable reports whether a Python with the brevitas package exists,
-// so we only run the optimizer service when it can actually work.
+// optimizerAvailable reports whether a Python with the brevitas package exists.
+// When found, it persists the resolved ABSOLUTE interpreter path to config so
+// the background service (which runs with a minimal PATH) uses the exact same
+// interpreter as the interactive shell — critical for conda/Homebrew installs.
 func (a *App) optimizerAvailable(ctx context.Context) bool {
-	return optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin) != ""
+	py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin)
+	if py == "" {
+		return false
+	}
+	if py != a.Cfg.Optimizer.PythonBin {
+		a.Cfg.Optimizer.PythonBin = py
+		_ = a.Cfg.Save()
+	}
+	return true
 }
 
 // ensureStarted installs the service if needed, then starts it.
