@@ -35,11 +35,15 @@ func (p *Provider) Install(ctx context.Context) error {
 	// Codex deprecated wire_api = "chat" in favor of "responses"
 	// (github.com/openai/codex/discussions/7782). The proxy routes the
 	// Responses API (/v1/responses) the same as chat completions.
+	// env_key tells Codex which environment variable holds the API key to send
+	// (the user's own OpenAI key). Without it Codex sends no credential and the
+	// upstream returns 401.
 	block := fmt.Sprintf(`model_provider = "brevitas"
 
 [model_providers.brevitas]
 name = "Brevitas"
 base_url = %q
+env_key = "OPENAI_API_KEY"
 wire_api = "responses"`, p.OpenAIBaseURL())
 	return p.EditManagedBlockAt(p.configPath(), block, true)
 }
