@@ -30,6 +30,7 @@ type Server struct {
 	log       *slog.Logger
 	transport *http.Transport
 	httpSrv   *http.Server
+	stats     *Stats
 }
 
 // Options bundles the injected dependencies for a Server.
@@ -70,6 +71,7 @@ func New(opts Options) *Server {
 		apiKey:    opts.APIKey,
 		log:       opts.Logger,
 		transport: transport,
+		stats:     newStats(),
 	}
 
 	mux := http.NewServeMux()

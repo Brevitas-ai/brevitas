@@ -27,6 +27,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 		return
 	}
+	// Token-savings stats endpoint (consumed by `brevitas stats`).
+	if r.URL.Path == "/__brevitas/stats" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(s.stats.snapshot())
+		return
+	}
 
 	rt := classify(r)
 	if rt.Family == FamilyUnknown {
@@ -39,6 +45,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadGateway, "brevitas: no upstream configured for %s", rt.Family)
 		return
 	}
+	s.stats.markRequest()
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.cfg.Proxy.MaxBodyBytes))
 	if err != nil {
@@ -79,7 +86,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				outBody = resp.Body
 			}
 			optHeaders = resp.Headers
-			s.log.Debug("optimized request", "family", rt.Family, "applied", resp.Applied)
+			if sv := resp.Savings; sv != nil {
+				s.stats.record(sv.TokensBefore, sv.TokensAfter)
+				s.log.Info("optimized request",
+					"family", rt.Family,
+					"model", meta.Model,
+					"tokens_before", sv.TokensBefore,
+					"tokens_after", sv.TokensAfter,
+					"saved_pct", sv.SavedPct,
+					"method", sv.Method,
+					"applied", resp.Applied,
+				)
+			} else {
+				s.log.Debug("optimized request", "family", rt.Family, "applied", resp.Applied)
+			}
 		}
 	}
 

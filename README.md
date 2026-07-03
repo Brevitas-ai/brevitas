@@ -78,6 +78,8 @@ Installation complete.
 | `brevitas install` | Detect, configure, and start everything |
 | `brevitas uninstall [--purge]` | Restore all configs, remove the service (`--purge` also deletes the key) |
 | `brevitas status` | Proxy, service, key, and provider state |
+| `brevitas stats` | Cumulative token-savings metrics from the proxy |
+| `brevitas optimizer` | Run the brevitas-systems optimizer adapter (the brain) |
 | `brevitas providers [--detected]` | List every supported tool and its state |
 | `brevitas doctor` | Full diagnostics |
 | `brevitas repair` | Re-apply config and restart the service |
@@ -134,6 +136,33 @@ Brevitas therefore detects Copilot and clearly reports that direct proxying is
 not available, instead of attempting a fragile or unsafe workaround.
 
 ---
+
+## Seeing token savings
+
+The proxy delegates optimization to the **brevitas-systems** package (the
+lossless token-efficiency model) running as a local service. Wire it up:
+
+```sh
+pip install brevitas-systems     # the optimization brain
+brevitas optimizer               # runs the adapter that serves the socket the proxy dials
+                                 # (auto-detects the Python that has brevitas)
+brevitas serve                   # or the background service — the proxy tools point at
+```
+
+Then send traffic through the proxy and watch savings accumulate:
+
+```sh
+brevitas stats
+#   Requests proxied     2
+#   Requests optimized   2
+#   Tokens before        31
+#   Tokens after         19
+#   Tokens saved         12 (38.7%)
+```
+
+Per-request savings are also logged (`brevitas logs`). If the optimizer isn't
+running, the proxy **fails open** — requests forward unchanged, nothing breaks,
+and stats simply show 0 saved.
 
 ## How it works
 

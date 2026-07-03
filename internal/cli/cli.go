@@ -44,6 +44,7 @@ var commands = []command{
 	{"install", "Detect tools, store the API key, configure everything, and start the service", (*App).cmdInstall},
 	{"uninstall", "Restore all tool configs and remove the background service", (*App).cmdUninstall},
 	{"status", "Show proxy, service, and provider status", (*App).cmdStatus},
+	{"stats", "Show cumulative token-savings metrics from the proxy", (*App).cmdStats},
 	{"providers", "List supported providers and their detection/config state", (*App).cmdProviders},
 	{"doctor", "Run diagnostics across the whole installation", (*App).cmdDoctor},
 	{"repair", "Re-apply configuration and restart the service", (*App).cmdRepair},
@@ -56,6 +57,7 @@ var commands = []command{
 	{"logout", "Remove the stored Brevitas API key", (*App).cmdLogout},
 	{"update", "Check for and upgrade the brevitas-systems package", (*App).cmdUpdate},
 	{"serve", "Run the proxy in the foreground (used by the service manager)", (*App).cmdServe},
+	{"optimizer", "Run the brevitas-systems optimizer adapter in the foreground", (*App).cmdOptimizer},
 	{"version", "Print version information", (*App).cmdVersion},
 }
 

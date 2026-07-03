@@ -49,6 +49,17 @@ type Response struct {
 	Applied []string `json:"applied"`
 	// Bypass, when true, tells the proxy to forward the original unchanged.
 	Bypass bool `json:"bypass"`
+	// Savings reports token counts before/after optimization (optional).
+	Savings *Savings `json:"savings,omitempty"`
+}
+
+// Savings summarizes the token reduction brevitas-systems achieved.
+type Savings struct {
+	TokensBefore int     `json:"tokens_before"`
+	TokensAfter  int     `json:"tokens_after"`
+	SavedPct     float64 `json:"saved_pct"`
+	Lossy        bool    `json:"lossy"`
+	Method       string  `json:"method"`
 }
 
 // Client is a Client for the brevitas-systems optimization service.
