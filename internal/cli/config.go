@@ -52,6 +52,17 @@ func (a *App) cmdConfig(ctx context.Context, args []string) error {
 		a.ok("upstream %s -> %s", args[1], args[2])
 		return nil
 
+	case "set-auth-mode":
+		if len(args) != 2 || (args[1] != "passthrough" && args[1] != "inject") {
+			return fmt.Errorf("usage: bvx config set-auth-mode passthrough|inject")
+		}
+		a.Cfg.Proxy.UpstreamAuth = args[1]
+		if err := a.Cfg.Save(); err != nil {
+			return err
+		}
+		a.ok("upstream auth mode set to %q (run 'bvx restart')", args[1])
+		return nil
+
 	case "set-python":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: bvx config set-python <interpreter>")

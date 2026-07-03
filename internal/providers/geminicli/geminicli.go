@@ -37,10 +37,10 @@ func (p *Provider) Detect(ctx context.Context) bool {
 	return detect.Executable("gemini") || detect.Exists(p.geminiDir())
 }
 
-// Install writes a managed dotenv block pointing the CLI at the proxy.
+// Install writes a managed dotenv block pointing the CLI at the proxy. It sets
+// only the base URL; the CLI keeps using the user's own Gemini key.
 func (p *Provider) Install(ctx context.Context) error {
-	key, _ := p.APIKeyValue(ctx)
-	block := fmt.Sprintf("GOOGLE_GEMINI_BASE_URL=%s\nGEMINI_API_KEY=%s", p.ProxyURL(), key)
+	block := fmt.Sprintf("GOOGLE_GEMINI_BASE_URL=%s", p.ProxyURL())
 	return p.EditManagedBlock(p.envPath(), block)
 }
 

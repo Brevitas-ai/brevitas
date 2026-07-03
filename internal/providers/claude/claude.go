@@ -29,18 +29,16 @@ func (p *Provider) Detect(ctx context.Context) bool {
 		detect.EnvSet("ANTHROPIC_API_KEY")
 }
 
-// Install points Claude Code at the Brevitas proxy via settings.json.
+// Install points Claude Code at the Brevitas proxy via settings.json. It sets
+// only the base URL — Claude Code keeps using the user's own Anthropic key,
+// which the proxy forwards through unchanged.
 func (p *Provider) Install(ctx context.Context) error {
-	key, _ := p.APIKeyValue(ctx)
 	return p.EditJSON(p.settingsPath(), func(root map[string]any) error {
 		env, _ := root["env"].(map[string]any)
 		if env == nil {
 			env = map[string]any{}
 		}
 		env["ANTHROPIC_BASE_URL"] = p.ProxyURL()
-		if key != "" {
-			env["ANTHROPIC_API_KEY"] = key
-		}
 		root["env"] = env
 		return nil
 	})

@@ -39,19 +39,38 @@ func TestUpstreamURL(t *testing.T) {
 	}
 }
 
-func TestApplyUpstreamAuth(t *testing.T) {
+func TestApplyGatewayAuth(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "http://x", nil)
-	applyUpstreamAuth(req, FamilyOpenAI, "sk-1")
+	applyGatewayAuth(req, FamilyOpenAI, "sk-1")
 	if req.Header.Get("Authorization") != "Bearer sk-1" {
 		t.Errorf("openai auth = %q", req.Header.Get("Authorization"))
 	}
 
 	req2, _ := http.NewRequest(http.MethodPost, "http://x", nil)
-	applyUpstreamAuth(req2, FamilyAnthropic, "sk-2")
+	applyGatewayAuth(req2, FamilyAnthropic, "sk-2")
 	if req2.Header.Get("x-api-key") != "sk-2" {
 		t.Errorf("anthropic auth = %q", req2.Header.Get("x-api-key"))
 	}
 	if req2.Header.Get("anthropic-version") == "" {
 		t.Error("anthropic-version not defaulted")
+	}
+}
+
+func TestCopyRequestHeadersForwardsCredentials(t *testing.T) {
+	src := http.Header{}
+	src.Set("Authorization", "Bearer sk-user")
+	src.Set("x-api-key", "sk-ant-user")
+	src.Set("Connection", "keep-alive") // hop-by-hop, must be dropped
+	dst := http.Header{}
+	copyRequestHeaders(dst, src)
+
+	if dst.Get("Authorization") != "Bearer sk-user" {
+		t.Errorf("Authorization not forwarded: %q", dst.Get("Authorization"))
+	}
+	if dst.Get("x-api-key") != "sk-ant-user" {
+		t.Errorf("x-api-key not forwarded: %q", dst.Get("x-api-key"))
+	}
+	if dst.Get("Connection") != "" {
+		t.Error("hop-by-hop Connection header should be dropped")
 	}
 }

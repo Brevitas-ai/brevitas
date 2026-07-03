@@ -148,7 +148,12 @@ func (s *Server) forward(
 		for k, v := range optHeaders {
 			req.Header.Set(k, v)
 		}
-		applyUpstreamAuth(req, rt.Family, apiKey)
+		// Default is passthrough: the tool's own provider credentials (copied
+		// above) reach the provider untouched. Only a Brevitas *gateway*
+		// upstream needs the single stored key injected.
+		if s.cfg.Proxy.UpstreamAuth == "inject" {
+			applyGatewayAuth(req, rt.Family, apiKey)
+		}
 		req.Header.Set("Content-Type", "application/json")
 		req.ContentLength = int64(len(body))
 

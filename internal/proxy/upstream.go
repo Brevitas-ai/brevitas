@@ -19,9 +19,11 @@ var hopByHopHeaders = map[string]struct{}{
 	"proxy-authorization": {},
 }
 
-// copyRequestHeaders copies safe headers from in to out, dropping hop-by-hop
-// headers and any inbound credentials (which are replaced with the upstream
-// credential in applyUpstreamAuth).
+// copyRequestHeaders copies safe headers from in to out, dropping only
+// hop-by-hop headers and connection-managed fields. Crucially it FORWARDS the
+// caller's credentials (Authorization / x-api-key / x-goog-api-key): each AI
+// tool already holds the user's real provider key, and Brevitas optimizes in
+// the middle without touching authentication.
 func copyRequestHeaders(dst http.Header, src http.Header) {
 	for k, vals := range src {
 		lk := strings.ToLower(k)
@@ -29,8 +31,8 @@ func copyRequestHeaders(dst http.Header, src http.Header) {
 			continue
 		}
 		switch lk {
-		case "authorization", "x-api-key", "x-goog-api-key", "host", "content-length":
-			continue // set explicitly below / by the transport
+		case "host", "content-length":
+			continue // set by the transport / recomputed for the new body
 		}
 		for _, v := range vals {
 			dst.Add(k, v)
@@ -38,11 +40,12 @@ func copyRequestHeaders(dst http.Header, src http.Header) {
 	}
 }
 
-// applyUpstreamAuth injects the Brevitas API key into the outbound request
-// using the scheme each provider family expects. The proxy authenticates to
-// the (Brevitas-managed) upstream with a single key; it never fabricates or
-// hacks around provider-native credentials.
-func applyUpstreamAuth(req *http.Request, family Family, apiKey string) {
+// applyGatewayAuth injects a single Brevitas key using each family's scheme.
+// This is ONLY used in "inject" (gateway) mode, where the configured upstream
+// is a Brevitas-managed gateway that holds the real provider keys. In the
+// default "passthrough" mode it is not called and the tool's own credentials
+// flow through unchanged.
+func applyGatewayAuth(req *http.Request, family Family, apiKey string) {
 	if apiKey == "" {
 		return
 	}
@@ -53,7 +56,6 @@ func applyUpstreamAuth(req *http.Request, family Family, apiKey string) {
 			req.Header.Set("anthropic-version", "2023-06-01")
 		}
 	case FamilyGoogle:
-		// Gemini accepts the key via header (preferred over query string).
 		req.Header.Set("x-goog-api-key", apiKey)
 	default: // OpenAI-compatible
 		req.Header.Set("Authorization", "Bearer "+apiKey)

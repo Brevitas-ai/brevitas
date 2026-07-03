@@ -48,6 +48,12 @@ type ProxyConfig struct {
 	RequestTimeout time.Duration `json:"request_timeout"`
 	MaxRetries     int           `json:"max_retries"`
 	MaxBodyBytes   int64         `json:"max_body_bytes"`
+	// UpstreamAuth controls how the proxy authenticates to the upstream:
+	//   "passthrough" (default) — forward the tool's own provider credentials
+	//                             unchanged; Brevitas only optimizes.
+	//   "inject"                — replace credentials with the stored Brevitas
+	//                             key (only for a Brevitas gateway upstream).
+	UpstreamAuth string `json:"upstream_auth"`
 }
 
 // OptimizerConfig configures the connection to the long-running
@@ -92,6 +98,7 @@ func Default() *Config {
 			RequestTimeout: 10 * time.Minute,
 			MaxRetries:     2,
 			MaxBodyBytes:   64 << 20, // 64 MiB
+			UpstreamAuth:   "passthrough",
 		},
 		Optimizer: OptimizerConfig{
 			Transport:    transport,

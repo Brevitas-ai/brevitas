@@ -30,10 +30,10 @@ func (p *Provider) Detect(ctx context.Context) bool {
 		detect.Exists(filepath.Join(detect.HomeDir(), ".aider"))
 }
 
-// Install appends a managed YAML block pointing Aider at the proxy.
+// Install appends a managed YAML block pointing Aider at the proxy. It sets
+// only the API base; Aider keeps using the user's own OPENAI_API_KEY.
 func (p *Provider) Install(ctx context.Context) error {
-	key, _ := p.APIKeyValue(ctx)
-	block := fmt.Sprintf("openai-api-base: %q\nopenai-api-key: %q", p.OpenAIBaseURL(), key)
+	block := fmt.Sprintf("openai-api-base: %q", p.OpenAIBaseURL())
 	return p.EditManagedBlock(p.configPath(), block)
 }
 

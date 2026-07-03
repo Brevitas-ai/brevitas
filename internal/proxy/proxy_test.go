@@ -62,8 +62,11 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 	ts := newTestServer(t, upstream.URL, opt)
 	defer ts.Close()
 
-	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json",
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
 		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer sk-user-real") // the tool's own key
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +81,10 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 	if gotBody["model"] != "optimized-model" {
 		t.Errorf("upstream model = %v, want optimized-model", gotBody["model"])
 	}
-	if gotAuth != "Bearer sk-brevitas" {
-		t.Errorf("upstream auth = %q", gotAuth)
+	// Passthrough (default): the tool's own credential reaches the provider
+	// unchanged — Brevitas must not substitute its own key.
+	if gotAuth != "Bearer sk-user-real" {
+		t.Errorf("upstream auth = %q, want passthrough of the tool's key", gotAuth)
 	}
 }
 

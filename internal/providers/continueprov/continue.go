@@ -31,9 +31,10 @@ func (p *Provider) Detect(ctx context.Context) bool {
 
 const modelTitle = "Brevitas (optimized)"
 
-// Install upserts a Brevitas-targeted OpenAI-compatible model.
+// Install upserts a Brevitas-targeted OpenAI-compatible model. It sets the
+// apiBase only; the user supplies their own provider key (via OPENAI_API_KEY
+// or by editing the entry), which the proxy forwards through unchanged.
 func (p *Provider) Install(ctx context.Context) error {
-	key, _ := p.APIKeyValue(ctx)
 	return p.EditJSON(p.configPath(), func(root map[string]any) error {
 		models, _ := root["models"].([]any)
 
@@ -42,7 +43,7 @@ func (p *Provider) Install(ctx context.Context) error {
 			"provider": "openai",
 			"model":    "gpt-4o",
 			"apiBase":  p.OpenAIBaseURL(),
-			"apiKey":   key,
+			"apiKey":   "OPENAI_API_KEY",
 		}
 
 		replaced := false
