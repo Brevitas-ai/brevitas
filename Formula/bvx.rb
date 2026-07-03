@@ -17,22 +17,22 @@ class Bvx < Formula
   on_macos do
     on_arm do
       url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.1/bvx-0.1.1-darwin-arm64.tar.gz"
-      sha256 "8bf024eedeb288afeeef6e830f4f48afeaacec3a9103758d67039922ea757873"
+      sha256 "f71b2843d4766f20306359f82c2725dce4ebd13a2961bd904f85991fed9eb200"
     end
     on_intel do
       url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.1/bvx-0.1.1-darwin-amd64.tar.gz"
-      sha256 "86a5b054a1fdd22069cfb215fbef3a43cfaf74bd1ab811ca3e686cd05408bc02"
+      sha256 "e0a46d7b8849e56b64fce81f538203e516e802ed0ed27a2c8cb8fc717660128c"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.1/bvx-0.1.1-linux-arm64.tar.gz"
-      sha256 "5044fc4f3ca36bdd667f5f43620c4e440817faeb84e8ddb8c8c19457ea8a194a"
+      sha256 "5f0f4faf1bffbbf3c1d0fec1e64a1242769d77e3a59a927f22df4ce9c02ae56a"
     end
     on_intel do
       url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.1/bvx-0.1.1-linux-amd64.tar.gz"
-      sha256 "ac1333f92b26a9ecca1ee2a282aea5932e35fe8d61bce1d16a93c191ea2877f8"
+      sha256 "6787158a9d76ce709b01abe721677efa3a5a760024dc2a32cfce51c6cbc96224"
     end
   end
 
