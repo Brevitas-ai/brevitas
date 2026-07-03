@@ -112,6 +112,28 @@ def optimize_body(provider: str, body: dict):
             new_contents.append(c)
         body = {**body, "contents": new_contents}
 
+    # OpenAI Responses API: {"input": "..." | [{role, content:[{type,text}]}]}
+    inp = body.get("input")
+    if isinstance(inp, str):
+        new, b, a, ly, mth = _optimize_text(inp)
+        body = {**body, "input": new}
+        total_before += b
+        total_after += a
+        lossy = lossy or ly
+        method = mth
+    elif isinstance(inp, list):
+        new_input = []
+        for item in inp:
+            if isinstance(item, dict) and isinstance(item.get("content"), list):
+                nc, b, a, ly, mth = _optimize_message_content(item["content"])
+                item = {**item, "content": nc}
+                total_before += b
+                total_after += a
+                lossy = lossy or ly
+                method = mth
+            new_input.append(item)
+        body = {**body, "input": new_input}
+
     # Legacy completions: {"prompt": "..."}
     if isinstance(body.get("prompt"), str):
         new, b, a, ly, mth = _optimize_text(body["prompt"])

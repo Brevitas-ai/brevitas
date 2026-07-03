@@ -32,12 +32,15 @@ func (p *Provider) Detect(ctx context.Context) bool {
 // provider. The block is placed at the top of the file so the bare
 // `model_provider` key remains valid TOML.
 func (p *Provider) Install(ctx context.Context) error {
+	// Codex deprecated wire_api = "chat" in favor of "responses"
+	// (github.com/openai/codex/discussions/7782). The proxy routes the
+	// Responses API (/v1/responses) the same as chat completions.
 	block := fmt.Sprintf(`model_provider = "brevitas"
 
 [model_providers.brevitas]
 name = "Brevitas"
 base_url = %q
-wire_api = "chat"`, p.OpenAIBaseURL())
+wire_api = "responses"`, p.OpenAIBaseURL())
 	return p.EditManagedBlockAt(p.configPath(), block, true)
 }
 
