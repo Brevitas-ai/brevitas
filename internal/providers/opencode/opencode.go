@@ -30,8 +30,10 @@ func (p *Provider) Detect(ctx context.Context) bool {
 }
 
 // Install sets the OpenAI provider baseURL to the Brevitas proxy. The user's
-// own key (OPENAI_API_KEY / existing config) is preserved and forwarded.
+// own key (OPENAI_API_KEY / existing config) is preserved and forwarded; a key
+// injected by a previous Brevitas version is removed.
 func (p *Provider) Install(ctx context.Context) error {
+	brevitasKey, _ := p.APIKeyValue(ctx)
 	return p.EditJSON(p.configPath(), func(root map[string]any) error {
 		prov, _ := root["provider"].(map[string]any)
 		if prov == nil {
@@ -46,6 +48,11 @@ func (p *Provider) Install(ctx context.Context) error {
 			opts = map[string]any{}
 		}
 		opts["baseURL"] = p.OpenAIBaseURL()
+		if brevitasKey != "" {
+			if v, ok := opts["apiKey"].(string); ok && v == brevitasKey {
+				delete(opts, "apiKey")
+			}
+		}
 		openai["options"] = opts
 		prov["openai"] = openai
 		root["provider"] = prov

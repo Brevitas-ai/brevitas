@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,49 @@ import (
 	"github.com/Brevitas-ai/brevitas/internal/config"
 	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
+
+func TestClaudeRemovesStaleBrevitasKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(home, ".claude", "settings.json")
+	// Simulate what an older Brevitas version wrote: the Brevitas key injected
+	// as ANTHROPIC_API_KEY, plus an unrelated user setting.
+	orig := `{"env":{"ANTHROPIC_API_KEY":"brevitas-KEY","ANTHROPIC_BASE_URL":"x"},"keep":1}`
+	if err := os.WriteFile(settings, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	data := t.TempDir()
+	env := &provider.Env{
+		Config:   config.Default(),
+		Dirs:     config.Dirs{Config: data, Data: data, Logs: data, Cache: data},
+		ProxyURL: "http://127.0.0.1:8080",
+		APIKey:   func(context.Context) (string, error) { return "brevitas-KEY", nil },
+	}
+	if err := New(env).Install(context.Background()); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	raw, _ := os.ReadFile(settings)
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		t.Fatal(err)
+	}
+	envMap := root["env"].(map[string]any)
+	if _, present := envMap["ANTHROPIC_API_KEY"]; present {
+		t.Errorf("stale Brevitas key was not removed: %s", raw)
+	}
+	if envMap["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:8080" {
+		t.Errorf("base url not set: %v", envMap["ANTHROPIC_BASE_URL"])
+	}
+	if root["keep"] == nil {
+		t.Errorf("unrelated setting was dropped: %s", raw)
+	}
+}
 
 func TestClaudeInstallValidateUninstall(t *testing.T) {
 	home := t.TempDir()

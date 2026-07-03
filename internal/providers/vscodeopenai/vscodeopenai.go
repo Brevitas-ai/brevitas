@@ -30,9 +30,15 @@ func (p *Provider) Detect(ctx context.Context) bool {
 
 // Install writes the base URL into the VS Code user settings.json.
 func (p *Provider) Install(ctx context.Context) error {
+	brevitasKey, _ := p.APIKeyValue(ctx)
 	return p.EditJSON(p.settingsPath(), func(root map[string]any) error {
 		root["vscode-openai.baseUrl"] = p.OpenAIBaseURL()
 		root["vscode-openai.serviceProvider"] = "OpenAI"
+		if brevitasKey != "" {
+			if v, ok := root["vscode-openai.apiKey"].(string); ok && v == brevitasKey {
+				delete(root, "vscode-openai.apiKey")
+			}
+		}
 		return nil
 	})
 }
