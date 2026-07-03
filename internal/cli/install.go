@@ -49,7 +49,7 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 		len(supported), len(manual), len(unsupported))
 
 	if len(supported)+len(manual) == 0 {
-		a.say("No configurable AI tools detected. Install one, then re-run 'brevitas install'.")
+		a.say("No configurable AI tools detected. Install one, then re-run 'bvx install'.")
 		return nil
 	}
 

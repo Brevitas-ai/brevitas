@@ -60,6 +60,6 @@ func (a *App) cmdOptimizer(ctx context.Context, _ []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	a.say("Starting brevitas optimizer via %s (%s)", python, a.Cfg.Optimizer.Address)
+	a.say("Starting Brevitas optimizer via %s (%s)", python, a.Cfg.Optimizer.Address)
 	return runForeground(ctx, python, args, a.Err)
 }

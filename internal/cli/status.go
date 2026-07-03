@@ -46,7 +46,7 @@ func (a *App) cmdStatus(ctx context.Context, _ []string) error {
 		}
 	}
 	if !any {
-		a.say("  (none configured yet — run 'brevitas install')")
+		a.say("  (none configured yet — run 'bvx install')")
 	}
 	return nil
 }

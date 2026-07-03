@@ -1,4 +1,4 @@
-// Package cli implements the `brevitas` command-line interface. It wires the
+// Package cli implements the `bvx` command-line interface. It wires the
 // installer's components together (config, keyring, provider registry, proxy,
 // service manager, optimizer client) and dispatches subcommands.
 package cli
@@ -71,7 +71,7 @@ func Main() int {
 
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "brevitas: failed to load config:", err)
+		fmt.Fprintln(os.Stderr, "bvx: failed to load config:", err)
 		return 1
 	}
 
@@ -99,28 +99,28 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	for _, c := range commands {
 		if c.name == name {
 			if err := c.run(a, ctx, args[1:]); err != nil {
-				fmt.Fprintf(a.Err, "brevitas %s: %v\n", name, err)
+				fmt.Fprintf(a.Err, "bvx %s: %v\n", name, err)
 				return 1
 			}
 			return 0
 		}
 	}
 
-	fmt.Fprintf(a.Err, "brevitas: unknown command %q\n\n", name)
+	fmt.Fprintf(a.Err, "bvx: unknown command %q\n\n", name)
 	a.usage()
 	return 2
 }
 
 func (a *App) usage() {
 	fmt.Fprintf(a.Out, "Brevitas — optimize your AI coding assistants.\n\n")
-	fmt.Fprintf(a.Out, "Usage:\n  brevitas <command> [flags]\n\nCommands:\n")
+	fmt.Fprintf(a.Out, "Usage:\n  bvx <command> [flags]\n\nCommands:\n")
 	rows := make([]command, len(commands))
 	copy(rows, commands)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
 	for _, c := range rows {
 		fmt.Fprintf(a.Out, "  %-11s %s\n", c.name, c.summary)
 	}
-	fmt.Fprintf(a.Out, "\nRun 'brevitas <command> --help' for details.\n")
+	fmt.Fprintf(a.Out, "\nRun 'bvx <command> --help' for details.\n")
 }
 
 // --- shared helpers -------------------------------------------------------

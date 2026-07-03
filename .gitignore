@@ -1,10 +1,10 @@
+# Build output (anchored to repo root so cmd/ packages are NOT ignored).
 /bin/
 /dist/
+/bvx
+/brevitas
 *.out
 *.test
 *.log
 .DS_Store
-brevitas
-brevitas-*
-!Formula/
 coverage.*

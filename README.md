@@ -20,11 +20,11 @@ local socket (see [`docs/PROTOCOL.md`](docs/PROTOCOL.md)).
 ## Install
 
 ```sh
-brew install brevitas
-brevitas install
+brew install bvx
+bvx install
 ```
 
-`brevitas install` will:
+`bvx install` will:
 
 1. Scan your system for supported AI tools
 2. Ask once for your Brevitas API key
@@ -75,20 +75,20 @@ Installation complete.
 
 | Command | Description |
 | --- | --- |
-| `brevitas install` | Detect, configure, and start everything |
-| `brevitas uninstall [--purge]` | Restore all configs, remove the service (`--purge` also deletes the key) |
-| `brevitas status` | Proxy, service, key, and provider state |
-| `brevitas stats` | Cumulative token-savings metrics from the proxy |
-| `brevitas optimizer` | Run the brevitas-systems optimizer adapter (the brain) |
-| `brevitas providers [--detected]` | List every supported tool and its state |
-| `brevitas doctor` | Full diagnostics |
-| `brevitas repair` | Re-apply config and restart the service |
-| `brevitas start` / `stop` / `restart` | Control the background service |
-| `brevitas logs [-f]` | Print/follow proxy logs |
-| `brevitas config [set-port\|set-upstream\|set-python]` | View/edit config |
-| `brevitas login` / `logout` | Manage the stored API key |
-| `brevitas update [-y]` | Check/upgrade `brevitas-systems` |
-| `brevitas version` | Version info |
+| `bvx install` | Detect, configure, and start everything |
+| `bvx uninstall [--purge]` | Restore all configs, remove the service (`--purge` also deletes the key) |
+| `bvx status` | Proxy, service, key, and provider state |
+| `bvx stats` | Cumulative token-savings metrics from the proxy |
+| `bvx optimizer` | Run the brevitas-systems optimizer adapter (the brain) |
+| `bvx providers [--detected]` | List every supported tool and its state |
+| `bvx doctor` | Full diagnostics |
+| `bvx repair` | Re-apply config and restart the service |
+| `bvx start` / `stop` / `restart` | Control the background service |
+| `bvx logs [-f]` | Print/follow proxy logs |
+| `bvx config [set-port\|set-upstream\|set-python]` | View/edit config |
+| `bvx login` / `logout` | Manage the stored API key |
+| `bvx update [-y]` | Check/upgrade `brevitas-systems` |
+| `bvx version` | Version info |
 
 ---
 
@@ -144,15 +144,15 @@ lossless token-efficiency model) running as a local service. Wire it up:
 
 ```sh
 pip install brevitas-systems     # the optimization brain
-brevitas optimizer               # runs the adapter that serves the socket the proxy dials
+bvx optimizer               # runs the adapter that serves the socket the proxy dials
                                  # (auto-detects the Python that has brevitas)
-brevitas serve                   # or the background service — the proxy tools point at
+bvx serve                   # or the background service — the proxy tools point at
 ```
 
 Then send traffic through the proxy and watch savings accumulate:
 
 ```sh
-brevitas stats
+bvx stats
 #   Requests proxied     2
 #   Requests optimized   2
 #   Tokens before        31
@@ -160,7 +160,7 @@ brevitas stats
 #   Tokens saved         12 (38.7%)
 ```
 
-Per-request savings are also logged (`brevitas logs`). If the optimizer isn't
+Per-request savings are also logged (`bvx logs`). If the optimizer isn't
 running, the proxy **fails open** — requests forward unchanged, nothing breaks,
 and stats simply show 0 saved.
 
@@ -197,7 +197,7 @@ Config changes go through a journaled writer
 - JSON files are **merged** — unrelated keys are never touched.
 - Text files (TOML/YAML/dotenv) get a delimited **managed block** so user
   content and comments are preserved.
-- `brevitas uninstall` **restores** every file exactly.
+- `bvx uninstall` **restores** every file exactly.
 
 ### API key storage
 
@@ -236,7 +236,7 @@ start/stop/status/restart-on-failure requirements without binary shims.
 ## Development
 
 ```sh
-make build      # build ./bin/brevitas with version info
+make build      # build ./bin/bvx with version info
 make test       # run all tests
 make race       # tests with the race detector
 make vet        # go vet
@@ -249,7 +249,7 @@ builds and cross-compiles offline and stays Homebrew-friendly.
 ### Layout
 
 ```
-cmd/brevitas/            # entrypoint
+cmd/bvx/            # entrypoint
 internal/
   cli/                   # commands (install, doctor, status, ...)
   config/                # Brevitas's own config + platform paths

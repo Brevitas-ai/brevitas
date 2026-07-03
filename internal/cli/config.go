@@ -25,7 +25,7 @@ func (a *App) cmdConfig(ctx context.Context, args []string) error {
 
 	case "set-port":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: brevitas config set-port <port>")
+			return fmt.Errorf("usage: bvx config set-port <port>")
 		}
 		port, err := strconv.Atoi(args[1])
 		if err != nil || port < 1 || port > 65535 {
@@ -35,12 +35,12 @@ func (a *App) cmdConfig(ctx context.Context, args []string) error {
 		if err := a.Cfg.Save(); err != nil {
 			return err
 		}
-		a.ok("proxy port set to %d (run 'brevitas repair' to re-point tools)", port)
+		a.ok("proxy port set to %d (run 'bvx repair' to re-point tools)", port)
 		return nil
 
 	case "set-upstream":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: brevitas config set-upstream <family> <url>")
+			return fmt.Errorf("usage: bvx config set-upstream <family> <url>")
 		}
 		if a.Cfg.Upstreams == nil {
 			a.Cfg.Upstreams = map[string]string{}
@@ -54,7 +54,7 @@ func (a *App) cmdConfig(ctx context.Context, args []string) error {
 
 	case "set-python":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: brevitas config set-python <interpreter>")
+			return fmt.Errorf("usage: bvx config set-python <interpreter>")
 		}
 		a.Cfg.Optimizer.PythonBin = args[1]
 		if err := a.Cfg.Save(); err != nil {

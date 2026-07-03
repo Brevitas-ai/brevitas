@@ -94,7 +94,7 @@ func (a *App) installServices(ctx context.Context) {
 		}
 	} else {
 		a.warn("Optimizer not started — brevitas-systems not found.")
-		a.warn("  Run: pip install brevitas-systems && brevitas repair")
+		a.warn("  Run: pip install brevitas-systems && bvx repair")
 	}
 }
 
@@ -189,7 +189,7 @@ func (a *App) cmdServe(ctx context.Context, _ []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	logger.Info("brevitas proxy starting", "addr", a.Cfg.Addr())
+	logger.Info("Brevitas proxy starting", "addr", a.Cfg.Addr())
 	if err := srv.ListenAndServe(ctx); err != nil {
 		return fmt.Errorf("proxy: %w", err)
 	}

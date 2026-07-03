@@ -46,7 +46,7 @@ func (a *App) cmdDoctor(ctx context.Context, _ []string) error {
 	if a.hasKey(ctx) {
 		add("api key present", nil)
 	} else {
-		add("api key present", fmt.Errorf("no key stored; run 'brevitas login'"))
+		add("api key present", fmt.Errorf("no key stored; run 'bvx login'"))
 	}
 
 	// Network to upstreams.

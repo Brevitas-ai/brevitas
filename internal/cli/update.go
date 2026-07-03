@@ -58,7 +58,7 @@ func (a *App) doUpgrade(ctx context.Context, sys *optimizer.Systems) error {
 	}
 	v, _ := sys.Version(ctx)
 	a.ok("brevitas-systems upgraded to %s", v)
-	a.say("Restart the service to pick up the new version: brevitas restart")
+	a.say("Restart the service to pick up the new version: bvx restart")
 	return nil
 }
 
