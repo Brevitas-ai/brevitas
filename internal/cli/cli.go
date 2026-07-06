@@ -41,7 +41,7 @@ type command struct {
 
 // commands is the full command table, in display order.
 var commands = []command{
-	{"install", "Detect tools, store the API key, configure everything, and start the service", (*App).cmdInstall},
+	{"install", "Configure AI coding tools (`install ai`) or a codebase (`install <repo>`)", (*App).cmdInstall},
 	{"uninstall", "Restore all tool configs and remove the background service", (*App).cmdUninstall},
 	{"status", "Show proxy, service, and provider status", (*App).cmdStatus},
 	{"stats", "Show cumulative token-savings metrics from the proxy", (*App).cmdStats},

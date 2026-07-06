@@ -21,17 +21,35 @@ local socket (see [`docs/PROTOCOL.md`](docs/PROTOCOL.md)).
 
 ```sh
 brew install bvx
-bvx install
 ```
 
-`bvx install` will:
+Brevitas has two install paths:
+
+```sh
+bvx install ai            # configure interactive AI coding tools (Claude Code, Codex, ...)
+bvx install <repo>        # scan a codebase and wire Brevitas into its agents
+```
+
+### `bvx install ai`
 
 1. Scan your system for supported AI tools
 2. Ask once for your Brevitas API key
 3. Store it in your OS credential store (Keychain / Credential Manager / Secret Service)
 4. Rewrite each supported tool's **documented** config to use `http://127.0.0.1:8080`
-5. Install and start a background service running the proxy
+5. Install and start the background services (proxy + optimizer)
 6. Run diagnostics and print a summary
+
+(`bvx install` with no argument defaults to `ai`.)
+
+### `bvx install <repo>`
+
+Scans a codebase for LLM API call sites (OpenAI/Anthropic/Google SDKs + raw
+HTTP), finds the keys/models each uses, and wires the Brevitas model between
+your agents and the provider to cut tokens.
+
+> The dedicated internal scanner is in progress (see [docs/TODO.md](docs/TODO.md)).
+> Until it ships, `bvx install <repo>` runs `brevitas analyze` as an interim
+> preview when the `brevitas-systems` package is installed.
 
 You never edit a config file by hand, and every change is backed up.
 

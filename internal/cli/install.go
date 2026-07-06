@@ -5,13 +5,40 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
-// cmdInstall runs the end-to-end installation flow.
+// cmdInstall dispatches between the two install paths:
+//
+//	bvx install ai            configure detected AI coding tools (Claude, Codex, ...)
+//	bvx install <repo>        scan a codebase and wire Brevitas into its agents
+//	bvx install               (no target) defaults to "ai" for backward compatibility
 func (a *App) cmdInstall(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	// Separate the first positional (the target) from flags, so that both
+	// `bvx install ai --no-service` and `bvx install --no-service` work.
+	var target string
+	var rest []string
+	for _, arg := range args {
+		if target == "" && !strings.HasPrefix(arg, "-") {
+			target = arg
+			continue
+		}
+		rest = append(rest, arg)
+	}
+
+	switch {
+	case target == "" || target == "ai":
+		return a.installAITools(ctx, rest)
+	default:
+		return a.installCodebase(ctx, target, rest)
+	}
+}
+
+// installAITools runs the end-to-end AI-coding-tool installation flow.
+func (a *App) installAITools(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("install ai", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (otherwise prompted or read from BREVITAS_API_KEY)")
 	noService := fs.Bool("no-service", false, "configure tools but do not install the background service")
