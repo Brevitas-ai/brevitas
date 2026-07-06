@@ -16,6 +16,7 @@ func TestClassify(t *testing.T) {
 		{"/v1/messages", nil, FamilyAnthropic},
 		{"/v1beta/models/gemini-pro:generateContent", nil, FamilyGoogle},
 		{"/v1/messages", map[string]string{"anthropic-version": "2023-06-01", "x-api-key": "k"}, FamilyAnthropic},
+		{"/openai/chat/completions", nil, FamilyOpenAI},
 		{"/healthz", nil, FamilyUnknown},
 	}
 	for _, c := range cases {
@@ -26,6 +27,18 @@ func TestClassify(t *testing.T) {
 		if got := classify(req).Family; got != c.want {
 			t.Errorf("classify(%q) = %q, want %q", c.path, got, c.want)
 		}
+	}
+}
+
+func TestClassifyRewritesAgentmapNamespace(t *testing.T) {
+	// agentmap routes OpenAI as <proxy>/openai/... — must forward as /v1/...
+	req, _ := http.NewRequest(http.MethodPost, "http://x/openai/chat/completions?a=1", nil)
+	rt := classify(req)
+	if rt.Family != FamilyOpenAI {
+		t.Fatalf("family = %q", rt.Family)
+	}
+	if rt.Path != "/v1/chat/completions?a=1" {
+		t.Errorf("rewritten path = %q, want /v1/chat/completions?a=1", rt.Path)
 	}
 }
 

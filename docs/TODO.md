@@ -1,39 +1,29 @@
 # Roadmap / TODO
 
-## Codebase scanner (`bvx install <repo>`)
+## Codebase scanner (`bvx install <repo>`) — integrated ✅
 
-The second install path exists in the CLI today but the scanner behind it is a
-stub (`internal/codebase`). It currently:
-
-- validates the repo path,
-- explains what the scanner will do,
-- runs `brevitas analyze` as an **interim preview** if `brevitas-systems` is
-  installed.
-
-### TODO — build the internal codebase scanner
-
-1. **Build the scanner** (separate project) that statically scans a repository
-   for LLM API call sites — OpenAI / Anthropic / Google SDKs **and** raw HTTP —
-   and reports, per call site:
-   - provider + model,
-   - the env var / mechanism the API **key** is read from,
-   - a recommended strategy (optimize vs lossless).
-2. **Package it as a pip package** (working name `brevitas-codebase`).
-3. **Wire it into `internal/codebase`**: replace `stubScanner` with an
-   implementation that shells out to the pip package via the configured Python
-   interpreter (the same way `internal/optimizer` locates `brevitas-systems`).
-   The Go-facing `Scanner` interface and `Result`/`CallSite` types are already
-   defined so the CLI won't change when the scanner lands.
-4. **`--apply`**: have the scanner wire Brevitas into each call site (wrap
-   clients / route base URLs) so the **brevitas token-efficiency model** sits
-   between the agents and the model and reduces tokens on every provider call.
-
-### End state
+`bvx install <repo>` now shells out to the **`agentmap-scan`** package
+(`agentmap`), which maps every AI API call in a codebase offline (no keys, no
+LLM) and can route those calls through a gateway:
 
 ```
-bvx install ai            # configure interactive AI coding tools (Claude, Codex, ...)
-bvx install <repo>        # scan a codebase, find keys + call sites, wire Brevitas in
+bvx install <repo>                 # scan + open the AI-call map (agentmap scan)
+bvx install <repo> --apply         # also route calls through Brevitas (agentmap install)
+bvx install <repo> --apply --auto  # also rewrite hardcoded provider URLs in place
 ```
 
-The scanner finds the keys and calls; the brevitas model pip goes in between to
-reduce the tokens sent to any provider API.
+`--apply` writes `.env.agentmap` with `OPENAI_BASE_URL=<proxy>/openai`,
+`ANTHROPIC_BASE_URL=<proxy>`, etc. The proxy rewrites the `/openai/*`,
+`/anthropic/*`, `/google/*` namespaces to the providers' real paths and
+forwards with the codebase's own key, optimizing tokens in between.
+
+### Remaining TODO
+
+- **Hardcoded URLs**: `agentmap install` reports call sites with hardcoded
+  provider URLs that env vars can't override; `--auto` rewrites them. Surface a
+  clearer summary of what `--auto` changed.
+- **Google routing**: verify `/google/*` namespace matches what agentmap emits
+  for Gemini once a Google call site is available to test against.
+- **Per-agent tracking**: agentmap reports agents; wire its report into
+  `bvx stats` so per-agent token savings show up after routing.
+- **Version pinning**: `agentmap-scan==0.1.0` — bump and re-test as it evolves.

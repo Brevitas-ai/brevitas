@@ -2,26 +2,29 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
-	"github.com/Brevitas-ai/brevitas/internal/codebase"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
-// installCodebase scans a repository and wires Brevitas into its agent code.
+// installCodebase scans a repository with the agentmap-scan package and,
+// optionally, routes its LLM calls through the Brevitas proxy so the optimizer
+// reduces tokens on every provider call.
 //
-// The dedicated internal scanner is not built yet (see internal/codebase). Until
-// it ships as a pip package, this command explains the flow and — if the
-// brevitas-systems package is installed — runs `brevitas analyze` as an interim
-// preview of the call sites Brevitas will optimize.
+//	bvx install <repo>                 scan + open the AI-call map
+//	bvx install <repo> --apply         also route the codebase through Brevitas
+//	bvx install <repo> --apply --auto  also rewrite hardcoded provider URLs
 func (a *App) installCodebase(ctx context.Context, repo string, args []string) error {
 	fs := flag.NewFlagSet("install <repo>", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
-	apply := fs.Bool("apply", false, "wire Brevitas into detected call sites (default: report only)")
+	apply := fs.Bool("apply", false, "route the codebase's LLM calls through Brevitas (writes .env.agentmap)")
+	auto := fs.Bool("auto", false, "with --apply, also rewrite hardcoded provider URLs in place")
+	noOpen := fs.Bool("no-open", false, "do not open the HTML report in a browser")
+	target := fs.String("target", a.Cfg.ProxyURL(), "gateway URL to route calls through")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -34,62 +37,59 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 		return fmt.Errorf("%q is not a directory (use `bvx install ai` for AI tools, or pass a repo path)", repo)
 	}
 
+	cli := a.agentmapCLI(ctx)
+	if cli == "" {
+		a.warn("The Brevitas codebase scanner is not installed.")
+		a.say("Install it, then re-run:")
+		a.say("  pip install agentmap-scan")
+		a.say("  bvx install %s", repo)
+		return nil
+	}
+
+	// 1. Scan: map every AI call in the codebase (offline, no keys).
 	a.say("Scanning codebase: %s\n", abs)
-
-	// Try the internal scanner first (not available yet).
-	res, err := codebase.New().Scan(ctx, abs, codebase.Options{
-		Apply:     *apply,
-		PythonBin: a.Cfg.Optimizer.PythonBin,
-	})
-	switch {
-	case err == nil:
-		return a.reportCodebase(res)
-	case !errors.Is(err, codebase.ErrNotAvailable):
-		return err
+	scanArgs := []string{"scan", abs, "--target", *target}
+	if *noOpen {
+		scanArgs = append(scanArgs, "--no-open")
+	}
+	if err := runForeground(ctx, cli, scanArgs, a.Out); err != nil {
+		return fmt.Errorf("agentmap scan: %w", err)
 	}
 
-	// Scanner not built yet — explain what it will do.
-	a.warn("The Brevitas codebase scanner is coming soon.")
-	a.say("When available, `bvx install %s` will:", repo)
-	a.say("  1. Find every LLM API call site (OpenAI/Anthropic/Google SDK + raw HTTP) and its key")
-	a.say("  2. Recommend optimize vs lossless per call")
-	a.say("  3. Wire the Brevitas model between your agents and the provider to cut tokens")
+	if !*apply {
+		a.say("\nTo route this codebase through Brevitas: bvx install %s --apply", repo)
+		return nil
+	}
 
-	// Interim preview using the existing brevitas-systems analyzer.
-	if cli := a.brevitasCLI(ctx); cli != "" {
-		a.say("\nInterim preview (brevitas analyze):\n")
-		verb := "analyze"
-		if *apply {
-			verb = "apply" // brevitas apply wraps clients; add --write yourself once reviewed
+	// 2. Apply: write routing env vars (and optionally rewrite hardcoded URLs)
+	//    so the codebase's calls flow through the Brevitas proxy.
+	a.say("\nRouting %s through Brevitas (%s)...", repo, *target)
+	installArgs := []string{"install", abs, "--target", *target,
+		"--env-file", filepath.Join(abs, ".env.agentmap")}
+	if *auto {
+		installArgs = append(installArgs, "--auto")
+	}
+	if err := runForeground(ctx, cli, installArgs, a.Out); err != nil {
+		return fmt.Errorf("agentmap install: %w", err)
+	}
+	a.say("\nDone. `source %s/.env.agentmap` before running your agents.", abs)
+	a.say("Ensure the Brevitas proxy is running: bvx status")
+	return nil
+}
+
+// agentmapCLI returns the path to the agentmap console script, or "" if the
+// agentmap-scan package is not installed.
+func (a *App) agentmapCLI(ctx context.Context) string {
+	if p, err := exec.LookPath("agentmap"); err == nil {
+		return p
+	}
+	// agentmap-scan is typically installed alongside brevitas-systems; look for
+	// its console script next to the interpreter that can import brevitas.
+	if py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin); py != "" {
+		cli := filepath.Join(filepath.Dir(py), "agentmap")
+		if _, err := os.Stat(cli); err == nil {
+			return cli
 		}
-		return runForeground(ctx, cli, []string{verb, abs}, a.Out)
-	}
-	a.say("\nInterim: `pip install brevitas-systems`, then `brevitas analyze %s`.", abs)
-	return nil
-}
-
-// reportCodebase prints a scan result (used once the internal scanner ships).
-func (a *App) reportCodebase(res *codebase.Result) error {
-	a.say("Found %d LLM call site(s) in %s", len(res.CallSites), res.Repo)
-	for _, cs := range res.CallSites {
-		a.say("  %s:%d  %s  %s", cs.File, cs.Line, cs.Provider, cs.Strategy)
-	}
-	if len(res.Wrote) > 0 {
-		a.say("\nWired Brevitas into %d file(s).", len(res.Wrote))
-	}
-	return nil
-}
-
-// brevitasCLI returns the path to the brevitas-systems console script that sits
-// next to the interpreter which can import it, or "" if unavailable.
-func (a *App) brevitasCLI(ctx context.Context) string {
-	py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin)
-	if py == "" {
-		return ""
-	}
-	cli := filepath.Join(filepath.Dir(py), "brevitas")
-	if _, err := os.Stat(cli); err == nil {
-		return cli
 	}
 	return ""
 }

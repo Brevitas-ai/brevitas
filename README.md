@@ -43,13 +43,19 @@ bvx install <repo>        # scan a codebase and wire Brevitas into its agents
 
 ### `bvx install <repo>`
 
-Scans a codebase for LLM API call sites (OpenAI/Anthropic/Google SDKs + raw
-HTTP), finds the keys/models each uses, and wires the Brevitas model between
-your agents and the provider to cut tokens.
+Maps every LLM API call in a codebase (OpenAI/Anthropic/Google SDKs + raw HTTP)
+and routes them through the Brevitas proxy so the optimizer cuts tokens on every
+call. Backed by the [`agentmap-scan`](https://pypi.org/project/agentmap-scan/)
+package (`pip install agentmap-scan`):
 
-> The dedicated internal scanner is in progress (see [docs/TODO.md](docs/TODO.md)).
-> Until it ships, `bvx install <repo>` runs `brevitas analyze` as an interim
-> preview when the `brevitas-systems` package is installed.
+```sh
+bvx install <repo>                 # scan + open the AI-call map
+bvx install <repo> --apply         # also route the codebase through Brevitas
+bvx install <repo> --apply --auto  # also rewrite hardcoded provider URLs
+```
+
+`--apply` writes a `.env.agentmap` file; `source` it before running your agents.
+Roadmap notes in [docs/TODO.md](docs/TODO.md).
 
 You never edit a config file by hand, and every change is backed up.
 

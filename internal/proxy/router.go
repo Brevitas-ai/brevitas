@@ -27,9 +27,30 @@ type route struct {
 // Anthropic-, and Google-compatible clients without any per-tool coupling.
 func classify(r *http.Request) route {
 	path := r.URL.Path
-	rt := route{Path: path}
+
+	// agentmap (codebase routing) namespaces providers by a leading segment,
+	// e.g. OPENAI_BASE_URL=<proxy>/openai. Strip the namespace so the request
+	// forwards to the provider's real path (e.g. /openai/chat/completions ->
+	// /v1/chat/completions).
+	var family Family
+	switch {
+	case strings.HasPrefix(path, "/openai/"):
+		family = FamilyOpenAI
+		path = "/v1/" + strings.TrimPrefix(path, "/openai/")
+	case strings.HasPrefix(path, "/anthropic/"):
+		family = FamilyAnthropic
+		path = "/" + strings.TrimPrefix(path, "/anthropic/")
+	case strings.HasPrefix(path, "/google/"):
+		family = FamilyGoogle
+		path = "/" + strings.TrimPrefix(path, "/google/")
+	}
+
+	rt := route{Path: path, Family: family}
 	if r.URL.RawQuery != "" {
 		rt.Path = path + "?" + r.URL.RawQuery
+	}
+	if family != FamilyUnknown {
+		return rt
 	}
 
 	switch {
@@ -46,7 +67,7 @@ func classify(r *http.Request) route {
 		rt.Family = FamilyGoogle
 
 	// OpenAI-compatible (chat/completions, responses, embeddings, models...).
-	case strings.HasPrefix(path, "/v1/") || strings.HasPrefix(path, "/openai/"):
+	case strings.HasPrefix(path, "/v1/"):
 		rt.Family = FamilyOpenAI
 
 	default:
