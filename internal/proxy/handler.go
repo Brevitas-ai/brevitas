@@ -114,6 +114,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				outBody = resp.Body
 			}
 			optHeaders = resp.Headers
+			// Native prompt caching is the lossless engine's main savings
+			// mechanism — the prompt is unchanged, so it never shows as a token
+			// reduction; count it separately so `bvx stats` reflects it.
+			if appliedHasNativeCache(resp.Applied) {
+				s.stats.markNativeCache()
+			}
 			if sv := resp.Savings; sv != nil {
 				s.stats.record(sv.TokensBefore, sv.TokensAfter)
 				s.log.Info("optimized request",
@@ -263,6 +269,17 @@ func extractMeta(body []byte) requestMeta {
 	}
 	_ = json.Unmarshal(body, &m) // best effort
 	return requestMeta{Model: m.Model, Stream: m.Stream}
+}
+
+// appliedHasNativeCache reports whether brevitas-systems inserted provider
+// native prompt-cache breakpoints on this request (applied pass "native_cache").
+func appliedHasNativeCache(applied []string) bool {
+	for _, a := range applied {
+		if a == "native_cache" {
+			return true
+		}
+	}
+	return false
 }
 
 func flattenHeaders(h http.Header) map[string]string {

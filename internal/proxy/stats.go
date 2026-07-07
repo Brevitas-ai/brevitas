@@ -13,6 +13,7 @@ type Stats struct {
 	TokensBefore atomic.Int64
 	TokensAfter  atomic.Int64
 	CacheHits    atomic.Int64
+	NativeCache  atomic.Int64
 	startedUnix  int64
 }
 
@@ -27,6 +28,12 @@ func (s *Stats) markRequest() { s.Requests.Add(1) }
 
 // markCacheHit counts one request served from the response cache (no upstream call).
 func (s *Stats) markCacheHit() { s.CacheHits.Add(1) }
+
+// markNativeCache counts one request where brevitas-systems inserted provider
+// native prompt-cache breakpoints. This is the lossless engine's main savings
+// mechanism: the prompt is unchanged (before == after), but repeated context is
+// billed by the provider at the cheaper cached-input rate.
+func (s *Stats) markNativeCache() { s.NativeCache.Add(1) }
 
 // record folds one request's savings into the totals.
 func (s *Stats) record(before, after int) {
@@ -46,6 +53,7 @@ type Snapshot struct {
 	TokensSaved  int64   `json:"tokens_saved"`
 	SavedPct     float64 `json:"saved_pct"`
 	CacheHits    int64   `json:"cache_hits"`
+	NativeCache  int64   `json:"native_cache"`
 	SinceUnix    int64   `json:"since_unix"`
 }
 
@@ -65,6 +73,7 @@ func (s *Stats) snapshot() Snapshot {
 		TokensSaved:  saved,
 		SavedPct:     pct,
 		CacheHits:    s.CacheHits.Load(),
+		NativeCache:  s.NativeCache.Load(),
 		SinceUnix:    s.startedUnix,
 	}
 }
