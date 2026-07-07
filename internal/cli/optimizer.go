@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // runForeground execs a command and streams its output, terminating it when
@@ -35,7 +36,7 @@ func (a *App) cmdOptimizer(ctx context.Context, _ []string) error {
 
 	python := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin)
 	if python == "" {
-		return fmt.Errorf("no Python interpreter with the brevitas package found; run: pip install brevitas-systems")
+		return fmt.Errorf("no Python interpreter with the brevitas package found; run: pip install %s", version.SystemsPipSpec())
 	}
 
 	script, err := optimizer.WriteAdapter(a.Dirs.Data)

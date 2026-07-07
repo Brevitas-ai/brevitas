@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // Systems inspects the locally installed brevitas-systems Python package. It
@@ -64,11 +66,11 @@ func (s *Systems) LatestAvailable(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("could not parse pip index output")
 }
 
-// Upgrade runs pip install --upgrade for brevitas-systems.
+// Upgrade runs pip install for the pinned brevitas-systems version.
 func (s *Systems) Upgrade(ctx context.Context) error {
-	_, err := s.run(ctx, "-m", "pip", "install", "--upgrade", "brevitas-systems")
+	_, err := s.run(ctx, "-m", "pip", "install", "--upgrade", version.SystemsPipSpec())
 	if err != nil {
-		return fmt.Errorf("upgrade brevitas-systems: %w", err)
+		return fmt.Errorf("install %s: %w", version.SystemsPipSpec(), err)
 	}
 	return nil
 }

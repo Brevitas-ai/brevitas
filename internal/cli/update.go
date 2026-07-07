@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // cmdUpdate checks whether the brevitas-systems package is outdated and offers
@@ -32,23 +33,17 @@ func (a *App) cmdUpdate(ctx context.Context, args []string) error {
 	}
 	a.say("Installed brevitas-systems: %s", current)
 
-	latest, err := sys.LatestAvailable(ctx)
-	if err != nil {
-		a.warn("could not check for updates: %v", err)
+	pinned := version.PinnedSystemsVersion
+	if optimizer.CompareVersions(current, pinned) == 0 {
+		a.ok("brevitas-systems is pinned and up to date (%s)", pinned)
 		return nil
 	}
 
-	switch optimizer.CompareVersions(current, latest) {
-	case 0, 1:
-		a.ok("brevitas-systems is up to date (%s)", current)
+	a.say("Pinned version is %s (installed %s)", pinned, current)
+	if !a.confirm(*assumeYes, "Install pinned version now? [y/N] ") {
 		return nil
-	default:
-		a.say("A newer version is available: %s -> %s", current, latest)
-		if !a.confirm(*assumeYes, "Upgrade now? [y/N] ") {
-			return nil
-		}
-		return a.doUpgrade(ctx, sys)
 	}
+	return a.doUpgrade(ctx, sys)
 }
 
 func (a *App) doUpgrade(ctx context.Context, sys *optimizer.Systems) error {

@@ -63,8 +63,8 @@ class Bvx < Formula
         bvx install     # detect tools, store your API key, configure, start
 
       The optimization engine (brevitas-systems) is a Python package:
-        pip install brevitas-systems
-        bvx update      # keep it current
+        pip install brevitas-systems==0.9.9
+        bvx update      # keep it pinned/current
     EOS
   end
 

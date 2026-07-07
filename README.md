@@ -167,7 +167,7 @@ The proxy delegates optimization to the **brevitas-systems** package (the
 lossless token-efficiency model) running as a local service. Wire it up:
 
 ```sh
-pip install brevitas-systems     # the optimization brain
+pip install brevitas-systems==0.9.9   # the optimization brain (pinned)
 bvx optimizer               # runs the adapter that serves the socket the proxy dials
                                  # (auto-detects the Python that has brevitas)
 bvx serve                   # or the background service — the proxy tools point at

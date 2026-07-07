@@ -11,6 +11,7 @@ import (
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 	"github.com/Brevitas-ai/brevitas/internal/proxy"
 	"github.com/Brevitas-ai/brevitas/internal/service"
+	"github.com/Brevitas-ai/brevitas/internal/version"
 )
 
 // managedService pairs a service with its display name.
@@ -104,7 +105,7 @@ func (a *App) installServices(ctx context.Context) {
 		}
 	} else {
 		a.warn("Optimizer not started — brevitas-systems not found.")
-		a.warn("  Run: pip install brevitas-systems && bvx repair")
+		a.warn("  Run: pip install %s && bvx repair", version.SystemsPipSpec())
 	}
 }
 
@@ -129,7 +130,7 @@ func (a *App) cmdStart(ctx context.Context, _ []string) error {
 			a.ok("optimizer started")
 		}
 	} else {
-		a.warn("optimizer not started — brevitas-systems not found (pip install brevitas-systems)")
+		a.warn("optimizer not started — brevitas-systems not found (pip install %s)", version.SystemsPipSpec())
 	}
 	return nil
 }
