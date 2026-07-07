@@ -44,6 +44,168 @@ except Exception:
     _router = None
 
 
+# ── Lossless engine (levers 2 + b9 + retrieval) ───────────────────────────────
+# The real optimization path used by the production Python proxy: one call to
+# optimize_request() applies provider-native cache_control (lever 2), multi-agent
+# shared-prefix promotion (b9), and retrieval — all lossless and guarded. We
+# delegate to it for chat-shaped bodies ({"messages": [...]}); other formats
+# (Gemini contents / Responses input / legacy prompt) fall back to text
+# compression below. Import is guarded so an older brevitas-systems still runs.
+try:
+    from token_efficiency_model.lossless.engine import optimize_request as _optimize_request
+    from token_efficiency_model.lossless.router import BrevitasRouter as _BrevitasRouter
+    from token_efficiency_model.lossless.provider_cache import count_tokens as _count_tokens
+except Exception:  # pragma: no cover
+    _optimize_request = None
+    _BrevitasRouter = None
+    _count_tokens = None
+
+# One router per (key_id, provider) — learns each session's repeat + cache behavior.
+# Process-lifetime state (the server runs serve_forever), mirroring proxy.py.
+_routers: dict = {}
+
+# Lossless engine is on by default; BREVITAS_LOSSLESS=0 falls back to text compression.
+_LOSSLESS_ON = os.environ.get("BREVITAS_LOSSLESS", "1") not in ("0", "false", "no")
+# Lossy LLMLingua text compression as an EXTRA pass (prod doesn't use it). Off by default.
+_TEXT_COMPRESS_ON = os.environ.get("BREVITAS_TEXT_COMPRESS", "0") not in ("0", "false", "no")
+
+
+def _router_for(key_id: str, provider: str):
+    k = f"{key_id}:{provider}"
+    r = _routers.get(k)
+    if r is None:
+        r = _BrevitasRouter(provider=provider)
+        _routers[k] = r
+    return r
+
+
+def _labels_from_headers(headers) -> tuple:
+    """(pipeline, agent, run_id) from x-brevitas-* headers (case-insensitive)."""
+    if not isinstance(headers, dict):
+        return "", "", ""
+    low = {str(k).lower(): v for k, v in headers.items()}
+    return (low.get("x-brevitas-pipeline", "") or "",
+            low.get("x-brevitas-agent", "") or "",
+            low.get("x-brevitas-run-id", "") or "")
+
+
+def _messages_tokens(body: dict) -> int:
+    if _count_tokens is None or not isinstance(body, dict):
+        return 0
+    total = 0
+    for m in body.get("messages", []) or []:
+        c = m.get("content", "")
+        if isinstance(c, str):
+            total += _count_tokens(c)
+        elif isinstance(c, list):
+            for b in c:
+                if isinstance(b, dict) and isinstance(b.get("text"), str):
+                    total += _count_tokens(b["text"])
+    sysv = body.get("system")
+    if isinstance(sysv, str):
+        total += _count_tokens(sysv)
+    return total
+
+
+# ── Response cache (lever 1, exact-hash) ──────────────────────────────────────
+# Skip the upstream call on a byte-identical repeat. Exact-hash only on the bvx
+# path (semantic_enabled=False) → zero wrong-answer risk. Namespaced per key_id
+# so a cached answer is never served across tenants. Any failure disables it
+# silently — the cache must NEVER break a request.
+try:
+    from brevitas.semantic_cache import SemanticCache as _SemanticCache
+except Exception:  # pragma: no cover
+    _SemanticCache = None
+
+_CACHE_ON = os.environ.get("BREVITAS_CACHE_ENABLED", "true").lower() != "false"
+_caches: dict = {}
+
+
+def _cache_for(key_id: str):
+    if _SemanticCache is None or not _CACHE_ON:
+        return None
+    c = _caches.get(key_id)
+    if c is None:
+        db = os.environ.get("BREVITAS_CACHE_DB") or None
+        try:
+            c = _SemanticCache(db_path=db, namespace=key_id, semantic_enabled=False)
+        except TypeError:
+            # Older brevitas-systems without namespace/semantic_enabled: fall back to
+            # exact-hash-only via an unreachable similarity threshold (cosine <= 1.0).
+            c = _SemanticCache(db_path=db, similarity_threshold=1.01)
+        except Exception:
+            c = None
+        _caches[key_id] = c
+    return c
+
+
+def _usage_from_response(provider: str, response: dict) -> tuple:
+    """(prompt_tokens, completion_tokens) from a provider response usage object."""
+    u = (response or {}).get("usage", {}) or {}
+    if provider == "anthropic":
+        p = int(u.get("input_tokens", 0)) + int(u.get("cache_read_input_tokens", 0)) \
+            + int(u.get("cache_creation_input_tokens", 0))
+        return p, int(u.get("output_tokens", 0))
+    return int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0))
+
+
+def cache_lookup(provider: str, model: str, body: dict, key_id: str):
+    """Return the stored provider response for a byte-identical repeat, else None."""
+    cache = _cache_for(key_id)
+    if cache is None or not isinstance(body, dict):
+        return None
+    try:
+        hit = cache.lookup(body, provider, model)  # cacheable() gate is inside
+    except Exception:
+        return None
+    if hit is None:
+        return None
+    return {"response": hit.response, "kind": getattr(hit, "kind", "exact")}
+
+
+def cache_store(provider: str, model: str, body: dict, response: dict, key_id: str) -> None:
+    cache = _cache_for(key_id)
+    if cache is None or not isinstance(body, dict) or not isinstance(response, dict):
+        return
+    try:
+        p, c = _usage_from_response(provider, response)
+        cache.store(body, provider, model, response, prompt_tokens=p, completion_tokens=c)
+    except Exception:
+        pass  # cache store is best-effort; never fail the record path
+
+
+def optimize_request_body(provider: str, body: dict, key_id: str, headers):
+    """Delegate a chat-shaped body to the lossless engine (levers 2 + b9 + retrieval).
+
+    Returns (new_body, savings_dict). Mutates a copy in place via optimize_request.
+    Falls back to (None, None) when the engine is unavailable or the body has no
+    messages, so the caller can use text compression instead."""
+    if _optimize_request is None or _BrevitasRouter is None:
+        return None, None
+    if not isinstance(body, dict) or not body.get("messages"):
+        return None, None
+    pipeline, agent, _run = _labels_from_headers(headers)
+    session_id = f"{key_id or 'local'}:{agent or pipeline or 'default'}"
+    router = _router_for(key_id or "local", provider)
+    before = _messages_tokens(body)
+    meta = _optimize_request(body, provider, router, session_id,
+                             pipeline=pipeline, agent=agent)
+    after = _messages_tokens(body)
+    strategy = (meta or {}).get("strategy", "cache_only")
+    applied = [strategy]
+    if (meta or {}).get("cache_breakpoints"):
+        applied.append("native_cache")
+    saved_pct = (before - after) / before * 100.0 if before > 0 else 0.0
+    savings = {
+        "tokens_before": before,
+        "tokens_after": after,
+        "saved_pct": round(saved_pct, 2),
+        "lossy": False,
+        "method": strategy,
+    }
+    return body, {"savings": savings, "applied": applied}
+
+
 def _optimize_text(text: str):
     """Compress one string; return (new_text, before, after, lossy, method)."""
     if not text or not text.strip():
@@ -197,29 +359,79 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
-    def do_POST(self):  # noqa: N802
-        if self.path != "/v1/optimize":
-            self._send(404, {"error": "not found"})
-            return
+    def _read_json(self):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b"{}"
+        return json.loads(raw or b"{}")
+
+    def do_POST(self):  # noqa: N802
+        if self.path not in ("/v1/optimize", "/v1/record"):
+            self._send(404, {"error": "not found"})
+            return
         try:
-            req = json.loads(raw or b"{}")
+            req = self._read_json()
         except json.JSONDecodeError as exc:
             self._send(400, {"error": f"bad json: {exc}"})
             return
 
+        if self.path == "/v1/record":
+            # Populate the response cache (+ later, usage reporting) from a
+            # completed exchange. Best-effort — always ack.
+            try:
+                cache_store(req.get("provider", ""), req.get("model", ""),
+                            req.get("body"), req.get("response"), req.get("key_id", ""))
+            except Exception:
+                pass
+            self._send(200, {"ok": True})
+            return
+
         provider = req.get("provider", "")
         body = req.get("body")
+        key_id = req.get("key_id", "")
+        headers = req.get("headers", {})
+
+        # Lever 1: exact-hash response-cache lookup BEFORE any optimization. On a
+        # hit the Go proxy replays cached_response and skips the upstream call.
         try:
-            new_body, savings = optimize_body(provider, body)
+            hit = cache_lookup(provider, req.get("model", ""), body, key_id)
+        except Exception:
+            hit = None
+        if hit is not None:
+            self._send(200, {"cache_hit": True, "cached_response": hit["response"],
+                             "cache_kind": hit["kind"], "bypass": False})
+            return
+
+        try:
+            # Preferred path: the lossless engine (native cache_control + b9 +
+            # retrieval) for chat-shaped bodies. Returns None for other formats.
+            applied = []
+            engine_savings = None
+            if _LOSSLESS_ON:
+                new_body, eng = optimize_request_body(provider, body, key_id, headers)
+                if new_body is not None:
+                    body = new_body
+                    applied = eng["applied"]
+                    engine_savings = eng["savings"]
+
+            # Text compression: the sole path for non-chat formats (Gemini/Responses/
+            # legacy), or an optional extra pass when explicitly enabled.
+            savings = engine_savings
+            if engine_savings is None or _TEXT_COMPRESS_ON:
+                new_body, tsav = optimize_body(provider, body)
+                body = new_body
+                if tsav and tsav["tokens_before"]:
+                    if "lossless" not in applied:
+                        applied.append("lossless")
+                    # keep the larger reported token reduction
+                    if savings is None or tsav["tokens_before"] >= savings["tokens_before"]:
+                        savings = tsav
         except Exception as exc:  # fail open on the server side too
-            self._send(200, {"body": body, "applied": [], "bypass": True, "note": str(exc)})
+            self._send(200, {"body": req.get("body"), "applied": [], "bypass": True, "note": str(exc)})
             return
 
         self._send(200, {
-            "body": new_body,
-            "applied": ["lossless"] if savings and savings["tokens_before"] else [],
+            "body": body,
+            "applied": applied,
             "bypass": False,
             "savings": savings,
         })

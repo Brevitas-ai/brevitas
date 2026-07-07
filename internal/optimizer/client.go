@@ -37,6 +37,9 @@ type Request struct {
 	Headers map[string]string `json:"headers"`
 	// Body is the raw JSON request body.
 	Body json.RawMessage `json:"body"`
+	// KeyID namespaces the response cache per identity (hash of the Brevitas
+	// key) so a cached answer is never served across tenants.
+	KeyID string `json:"key_id,omitempty"`
 }
 
 // Response is the optimized payload returned by brevitas-systems.
@@ -51,6 +54,25 @@ type Response struct {
 	Bypass bool `json:"bypass"`
 	// Savings reports token counts before/after optimization (optional).
 	Savings *Savings `json:"savings,omitempty"`
+	// CacheHit, when true, means the response cache already holds the answer for
+	// this request: the proxy MUST return CachedResponse and skip the upstream
+	// call entirely. Only set for non-stream, cacheable requests.
+	CacheHit bool `json:"cache_hit,omitempty"`
+	// CachedResponse is the verbatim provider response JSON to replay on a hit.
+	CachedResponse json.RawMessage `json:"cached_response,omitempty"`
+	// CacheKind is "exact" or "semantic" (for logging/observability).
+	CacheKind string `json:"cache_kind,omitempty"`
+}
+
+// RecordRequest hands a completed (non-cached) exchange back to the sidecar so
+// it can populate the response cache and report usage. Fire-and-forget.
+type RecordRequest struct {
+	Provider string            `json:"provider"`
+	Model    string            `json:"model"`
+	KeyID    string            `json:"key_id,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     json.RawMessage   `json:"body"`     // the ORIGINAL request body
+	Response json.RawMessage   `json:"response"` // the provider's response JSON
 }
 
 // Savings summarizes the token reduction brevitas-systems achieved.
@@ -71,6 +93,9 @@ type Client interface {
 	Health(ctx context.Context) error
 	// Version reports the running brevitas-systems version.
 	Version(ctx context.Context) (string, error)
+	// Record hands a completed exchange back for caching + usage reporting.
+	// Best-effort: errors are advisory and never affect the client's response.
+	Record(ctx context.Context, req *RecordRequest) error
 }
 
 // httpClient talks HTTP to brevitas-systems over a Unix socket or TCP.
@@ -141,6 +166,26 @@ func (c *httpClient) Optimize(ctx context.Context, req *Request) (*Response, err
 		return nil, fmt.Errorf("decode optimize response: %w", err)
 	}
 	return &out, nil
+}
+
+func (c *httpClient) Record(ctx context.Context, req *RecordRequest) error {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal record request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/v1/record", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("User-Agent", version.UserAgent())
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("call brevitas-systems record: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return nil
 }
 
 func (c *httpClient) Health(ctx context.Context) error {

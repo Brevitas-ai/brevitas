@@ -151,6 +151,42 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response) {
 	}
 }
 
+// streamAndRecord delivers a non-streaming upstream response to the client and
+// hands the (original request, response) pair to the sidecar so it can populate
+// the response cache and report usage. Recording is fire-and-forget on a
+// detached context — it must never delay or fail the client's response.
+func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response, rec *optimizer.RecordRequest) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.Proxy.MaxBodyBytes))
+	if err != nil {
+		// Fall back to a plain stream of whatever we did read; don't record a partial.
+		s.streamResponse(w, resp)
+		return
+	}
+	for k, vals := range resp.Header {
+		// We buffer the whole body and set our own length, so drop the upstream's
+		// framing headers to avoid a Content-Length/Transfer-Encoding conflict.
+		if http.CanonicalHeaderKey(k) == "Content-Length" || http.CanonicalHeaderKey(k) == "Transfer-Encoding" {
+			continue
+		}
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.Header().Set("X-Brevitas-Cache", "miss")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(body)
+
+	rec.Response = body
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.opt.Record(ctx, rec); err != nil {
+			s.log.Debug("cache record failed", "err", err)
+		}
+	}()
+}
+
 func (s *Server) writeError(w http.ResponseWriter, code int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	s.log.Warn("proxy error", "code", code, "msg", msg)

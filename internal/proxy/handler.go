@@ -3,6 +3,8 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,17 @@ import (
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
+
+// optimizerKeyID is a short, non-reversible identity for the Brevitas API key,
+// used to namespace the response cache so answers never cross tenants. Empty in,
+// empty out (single-tenant local default).
+func optimizerKeyID(apiKey string) string {
+	if apiKey == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(sum[:])[:16]
+}
 
 // handle is the main request handler. It reads the body, asks brevitas-systems
 // to optimize it (failing open on any optimizer error so coding assistants
@@ -75,6 +88,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			Path:     r.URL.Path,
 			Headers:  flattenHeaders(r.Header),
 			Body:     json.RawMessage(body),
+			KeyID:    optimizerKeyID(apiKey),
 		}
 		optCtx, cancel := context.WithTimeout(ctx, s.cfg.Optimizer.CallTimeout)
 		resp, oerr := s.opt.Optimize(optCtx, optReq)
@@ -82,6 +96,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case oerr != nil:
 			s.log.Warn("optimizer failed, forwarding original", "family", rt.Family, "err", oerr)
+		case resp.CacheHit && len(resp.CachedResponse) > 0 && !meta.Stream:
+			// Response cache hit: replay the stored answer and skip the upstream
+			// call entirely (100% savings on this call). Cache never serves streams.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Brevitas-Cache", "hit")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(resp.CachedResponse)
+			s.stats.markCacheHit()
+			s.log.Info("cache hit", "family", rt.Family, "model", meta.Model,
+				"kind", resp.CacheKind, "dur_ms", time.Since(start).Milliseconds())
+			return
 		case resp.Bypass:
 			s.log.Debug("optimizer bypassed request", "family", rt.Family)
 		default:
@@ -113,7 +138,21 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	s.streamResponse(w, resp)
+	// Non-stream 200s are handed back to the sidecar to populate the response
+	// cache (it applies its own cacheable() gate) and report usage. Streams and
+	// errors are streamed straight through and never cached.
+	if s.opt != nil && !meta.Stream && resp.StatusCode == http.StatusOK {
+		s.streamAndRecord(w, resp, &optimizer.RecordRequest{
+			Provider: string(rt.Family),
+			Model:    meta.Model,
+			KeyID:    optimizerKeyID(apiKey),
+			Headers:  flattenHeaders(r.Header),
+			Body:     json.RawMessage(body),
+		})
+	} else {
+		w.Header().Set("X-Brevitas-Cache", "miss")
+		s.streamResponse(w, resp)
+	}
 	s.log.Info("proxied",
 		"family", rt.Family,
 		"model", meta.Model,

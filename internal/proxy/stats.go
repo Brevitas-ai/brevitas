@@ -12,6 +12,7 @@ type Stats struct {
 	Optimized    atomic.Int64
 	TokensBefore atomic.Int64
 	TokensAfter  atomic.Int64
+	CacheHits    atomic.Int64
 	startedUnix  int64
 }
 
@@ -23,6 +24,9 @@ func newStats() *Stats {
 
 // markRequest counts one proxied API request (whether or not it was optimized).
 func (s *Stats) markRequest() { s.Requests.Add(1) }
+
+// markCacheHit counts one request served from the response cache (no upstream call).
+func (s *Stats) markCacheHit() { s.CacheHits.Add(1) }
 
 // record folds one request's savings into the totals.
 func (s *Stats) record(before, after int) {
@@ -41,6 +45,7 @@ type Snapshot struct {
 	TokensAfter  int64   `json:"tokens_after"`
 	TokensSaved  int64   `json:"tokens_saved"`
 	SavedPct     float64 `json:"saved_pct"`
+	CacheHits    int64   `json:"cache_hits"`
 	SinceUnix    int64   `json:"since_unix"`
 }
 
@@ -59,6 +64,7 @@ func (s *Stats) snapshot() Snapshot {
 		TokensAfter:  after,
 		TokensSaved:  saved,
 		SavedPct:     pct,
+		CacheHits:    s.CacheHits.Load(),
 		SinceUnix:    s.startedUnix,
 	}
 }

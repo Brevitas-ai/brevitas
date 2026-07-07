@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Brevitas-ai/brevitas/internal/config"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
@@ -16,14 +17,20 @@ import (
 
 // fakeOptimizer rewrites the model to prove the optimize hook is applied.
 type fakeOptimizer struct {
-	called bool
-	fail   bool
+	called    bool
+	fail      bool
+	cacheHit  []byte // when non-nil, Optimize returns a cache hit with this body
+	recorded  bool   // set when Record is called
+	recordReq *optimizer.RecordRequest
 }
 
 func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*optimizer.Response, error) {
 	f.called = true
 	if f.fail {
 		return nil, io.ErrUnexpectedEOF
+	}
+	if f.cacheHit != nil {
+		return &optimizer.Response{CacheHit: true, CachedResponse: f.cacheHit, CacheKind: "exact"}, nil
 	}
 	body := map[string]any{}
 	_ = json.Unmarshal(req.Body, &body)
@@ -33,6 +40,11 @@ func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*op
 }
 func (f *fakeOptimizer) Health(context.Context) error            { return nil }
 func (f *fakeOptimizer) Version(context.Context) (string, error) { return "test", nil }
+func (f *fakeOptimizer) Record(_ context.Context, req *optimizer.RecordRequest) error {
+	f.recorded = true
+	f.recordReq = req
+	return nil
+}
 
 func newTestServer(t *testing.T, upstream string, opt optimizer.Client) *httptest.Server {
 	t.Helper()
@@ -171,6 +183,73 @@ func TestProxyEmptyBodySkipsOptimizer(t *testing.T) {
 	}
 	if opt.called {
 		t.Error("optimizer should be skipped for an empty body")
+	}
+}
+
+func TestProxyCacheHitSkipsUpstream(t *testing.T) {
+	var upstreamCalled bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalled = true
+		_, _ = w.Write([]byte(`{"upstream":true}`))
+	}))
+	defer upstream.Close()
+
+	cached := []byte(`{"cached":true}`)
+	opt := &fakeOptimizer{cacheHit: cached}
+	ts := newTestServer(t, upstream.URL, opt)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if upstreamCalled {
+		t.Error("upstream MUST NOT be called on a cache hit")
+	}
+	if string(body) != string(cached) {
+		t.Errorf("body = %s, want cached response", body)
+	}
+	if resp.Header.Get("X-Brevitas-Cache") != "hit" {
+		t.Errorf("X-Brevitas-Cache = %q, want hit", resp.Header.Get("X-Brevitas-Cache"))
+	}
+}
+
+func TestProxyRecordsNonStreamResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"answer":42}`))
+	}))
+	defer upstream.Close()
+
+	opt := &fakeOptimizer{}
+	ts := newTestServer(t, upstream.URL, opt)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// Record runs in a detached goroutine; give it a moment.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !opt.recorded {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !opt.recorded {
+		t.Fatal("Record was not called for a non-stream 200")
+	}
+	if opt.recordReq == nil || string(opt.recordReq.Response) != `{"answer":42}` {
+		t.Errorf("recorded response = %q", opt.recordReq.Response)
 	}
 }
 

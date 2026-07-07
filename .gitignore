@@ -8,3 +8,6 @@
 *.log
 .DS_Store
 coverage.*
+
+# Python bytecode from the embedded optimizer adapter
+internal/optimizer/__pycache__/
