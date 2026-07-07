@@ -32,17 +32,38 @@ except Exception as exc:  # pragma: no cover
 VERSION = getattr(brevitas, "__version__", "0.9.5")
 
 
+# Prefer the task-aware compression router: it classifies the prompt (code /
+# creative / summarize / ...), picks a per-task keep-rate, protects code blocks,
+# and uses LLMLingua-2 for real token reduction when the optional extra is
+# installed (pip install "brevitas-systems[promptopt]"). Without that extra it
+# transparently falls back to lossless (whitespace only) — which is why savings
+# are small until the extra is installed.
+try:
+    _router = brevitas.TaskCompressionRouter(protect_code=True)
+except Exception:
+    _router = None
+
+
 def _optimize_text(text: str):
-    """Run one string through the lossless model; return (new_text, before, after, lossy, method)."""
+    """Compress one string; return (new_text, before, after, lossy, method)."""
     if not text or not text.strip():
         return text, 0, 0, False, "noop"
-    r = brevitas.optimize_prompt(text)  # default rate => lossless
+
+    opt = None
+    if _router is not None:
+        try:
+            opt = _router.route(text).optimization  # auto-classifies the task
+        except Exception:
+            opt = None
+    if opt is None:
+        opt = brevitas.optimize_prompt(text)  # lossless fallback
+
     return (
-        r.optimized,
-        int(r.tokens_before),
-        int(r.tokens_after),
-        bool(r.lossy),
-        str(r.method),
+        opt.optimized,
+        int(opt.tokens_before),
+        int(opt.tokens_after),
+        bool(opt.lossy),
+        str(opt.method),
     )
 
 
