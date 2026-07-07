@@ -156,8 +156,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			Body:     json.RawMessage(body),
 		})
 	} else {
+		// Meter usage off streamed completions too — the SSE trailer carries the
+		// same cache-read/write token counts, so caching stats aren't blind to the
+		// streaming path that coding tools use by default.
+		var sniff *usageSniffer
+		if meta.Stream && resp.StatusCode == http.StatusOK {
+			sniff = newUsageSniffer(rt.Family)
+		}
 		w.Header().Set("X-Brevitas-Cache", "miss")
-		s.streamResponse(w, resp)
+		s.streamResponse(w, resp, sniff)
+		if sniff != nil {
+			s.stats.recordUsage(rt.Family, meta.Model, sniff.result())
+		}
 	}
 	s.log.Info("proxied",
 		"family", rt.Family,

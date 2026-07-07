@@ -253,6 +253,49 @@ func TestProxyRecordsNonStreamResponse(t *testing.T) {
 	}
 }
 
+func TestProxyMetersUsageIntoStats(t *testing.T) {
+	// A non-stream completion whose usage block reports cached prompt tokens must
+	// surface on the /__brevitas/stats endpoint as real cache-read tokens + $.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":20,` +
+			`"prompt_tokens_details":{"cached_tokens":800}}}`))
+	}))
+	defer upstream.Close()
+
+	ts := newTestServer(t, upstream.URL, &fakeOptimizer{})
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	statsResp, err := http.Get(ts.URL + "/__brevitas/stats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer statsResp.Body.Close()
+	var snap Snapshot
+	if err := json.NewDecoder(statsResp.Body).Decode(&snap); err != nil {
+		t.Fatal(err)
+	}
+	if snap.CacheReadTokens != 800 {
+		t.Errorf("cache_read_tokens = %d, want 800", snap.CacheReadTokens)
+	}
+	if snap.InputTokens != 200 {
+		t.Errorf("input_tokens = %d, want 200", snap.InputTokens)
+	}
+	if snap.PricedResponses != 1 || snap.CostSavedUSD <= 0 {
+		t.Errorf("priced=%d cost=$%f, want 1 priced response with positive savings",
+			snap.PricedResponses, snap.CostSavedUSD)
+	}
+}
+
 func TestProxyUnknownRouteIs404(t *testing.T) {
 	ts := newTestServer(t, "http://127.0.0.1:1", &fakeOptimizer{})
 	defer ts.Close()

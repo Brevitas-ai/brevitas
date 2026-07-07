@@ -14,7 +14,22 @@ type Stats struct {
 	TokensAfter  atomic.Int64
 	CacheHits    atomic.Int64
 	NativeCache  atomic.Int64
-	startedUnix  int64
+
+	// Real usage measured off each provider response — the honest source for
+	// "did native prompt caching actually save money". cacheRead/cacheWrite are
+	// the provider's own reported token counts, not an estimate.
+	InputTokens      atomic.Int64
+	OutputTokens     atomic.Int64
+	CacheReadTokens  atomic.Int64
+	CacheWriteTokens atomic.Int64
+	// CostSavedMicros is cumulative dollars saved by caching, in micro-USD
+	// (1e-6 USD), summed only over responses whose model we can price.
+	CostSavedMicros atomic.Int64
+	// PricedResponses counts responses that carried usage AND a known model
+	// price, so the dollar figure can be shown with its coverage.
+	PricedResponses atomic.Int64
+
+	startedUnix int64
 }
 
 func newStats() *Stats {
@@ -44,6 +59,22 @@ func (s *Stats) record(before, after int) {
 	s.TokensAfter.Add(int64(after))
 }
 
+// recordUsage folds one response's real token usage (and the dollars it saved
+// via caching) into the totals. A zero usage is a no-op.
+func (s *Stats) recordUsage(family Family, model string, u usage) {
+	if u.empty() {
+		return
+	}
+	s.InputTokens.Add(u.inputTokens)
+	s.OutputTokens.Add(u.outputTokens)
+	s.CacheReadTokens.Add(u.cacheRead)
+	s.CacheWriteTokens.Add(u.cacheWrite)
+	if micros, known := savedMicroUSD(family, model, u); known {
+		s.CostSavedMicros.Add(micros)
+		s.PricedResponses.Add(1)
+	}
+}
+
 // Snapshot is a serializable view of the counters.
 type Snapshot struct {
 	Requests     int64   `json:"requests"`
@@ -54,7 +85,17 @@ type Snapshot struct {
 	SavedPct     float64 `json:"saved_pct"`
 	CacheHits    int64   `json:"cache_hits"`
 	NativeCache  int64   `json:"native_cache"`
-	SinceUnix    int64   `json:"since_unix"`
+
+	// Real usage measured off provider responses.
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	CacheReadPct     float64 `json:"cache_read_pct"`
+	CostSavedUSD     float64 `json:"cost_saved_usd"`
+	PricedResponses  int64   `json:"priced_responses"`
+
+	SinceUnix int64 `json:"since_unix"`
 }
 
 func (s *Stats) snapshot() Snapshot {
@@ -65,15 +106,30 @@ func (s *Stats) snapshot() Snapshot {
 	if before > 0 {
 		pct = float64(saved) / float64(before) * 100
 	}
+	cacheRead := s.CacheReadTokens.Load()
+	cacheWrite := s.CacheWriteTokens.Load()
+	input := s.InputTokens.Load()
+	totalInput := input + cacheRead + cacheWrite
+	var cacheReadPct float64
+	if totalInput > 0 {
+		cacheReadPct = float64(cacheRead) / float64(totalInput) * 100
+	}
 	return Snapshot{
-		Requests:     s.Requests.Load(),
-		Optimized:    s.Optimized.Load(),
-		TokensBefore: before,
-		TokensAfter:  after,
-		TokensSaved:  saved,
-		SavedPct:     pct,
-		CacheHits:    s.CacheHits.Load(),
-		NativeCache:  s.NativeCache.Load(),
-		SinceUnix:    s.startedUnix,
+		Requests:         s.Requests.Load(),
+		Optimized:        s.Optimized.Load(),
+		TokensBefore:     before,
+		TokensAfter:      after,
+		TokensSaved:      saved,
+		SavedPct:         pct,
+		CacheHits:        s.CacheHits.Load(),
+		NativeCache:      s.NativeCache.Load(),
+		InputTokens:      input,
+		OutputTokens:     s.OutputTokens.Load(),
+		CacheReadTokens:  cacheRead,
+		CacheWriteTokens: cacheWrite,
+		CacheReadPct:     cacheReadPct,
+		CostSavedUSD:     float64(s.CostSavedMicros.Load()) / 1e6,
+		PricedResponses:  s.PricedResponses.Load(),
+		SinceUnix:        s.startedUnix,
 	}
 }

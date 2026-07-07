@@ -123,8 +123,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 }
 
 // streamResponse copies the upstream response to the client, flushing so that
-// SSE and chunked streaming reach the tool with minimal latency.
-func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response) {
+// SSE and chunked streaming reach the tool with minimal latency. When sniff is
+// non-nil, each chunk is also fed to it to meter usage off the stream; sniffing
+// never blocks or alters the bytes sent to the client.
+func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, sniff *usageSniffer) {
 	for k, vals := range resp.Header {
 		for _, v := range vals {
 			w.Header().Add(k, v)
@@ -140,7 +142,8 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response) {
 			if _, werr := w.Write(buf[:n]); werr != nil {
 				return
 			}
-			_ = rc.Flush() // ignore ErrNotSupported for non-flushable writers
+			sniff.Write(buf[:n]) // nil-safe; a copy is not retained past the call
+			_ = rc.Flush()       // ignore ErrNotSupported for non-flushable writers
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -159,7 +162,7 @@ func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response, rec
 	body, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.Proxy.MaxBodyBytes))
 	if err != nil {
 		// Fall back to a plain stream of whatever we did read; don't record a partial.
-		s.streamResponse(w, resp)
+		s.streamResponse(w, resp, nil)
 		return
 	}
 	for k, vals := range resp.Header {
@@ -176,6 +179,10 @@ func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response, rec
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
+
+	// Meter the real usage the provider reported (cache-read/write tokens and
+	// the dollars they saved) so `bvx stats` can answer "did caching help".
+	s.stats.recordUsage(Family(rec.Provider), rec.Model, extractUsage(Family(rec.Provider), body))
 
 	rec.Response = body
 	go func() {
