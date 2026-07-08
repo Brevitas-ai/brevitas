@@ -33,6 +33,14 @@ func copyRequestHeaders(dst http.Header, src http.Header) {
 		switch lk {
 		case "host", "content-length":
 			continue // set by the transport / recomputed for the new body
+		case "accept-encoding":
+			// Drop the caller's Accept-Encoding so Go's transport negotiates
+			// compression itself and hands us a DECODED response body. If we
+			// forwarded it (SDKs send "gzip"), the transport would leave the
+			// body gzipped, and usage metering + response-cache storage would
+			// choke on compressed bytes. The client hop is loopback, so losing
+			// gzip there costs nothing.
+			continue
 		}
 		for _, v := range vals {
 			dst.Add(k, v)

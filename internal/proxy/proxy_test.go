@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -293,6 +295,64 @@ func TestProxyMetersUsageIntoStats(t *testing.T) {
 	if snap.PricedResponses != 1 || snap.CostSavedUSD <= 0 {
 		t.Errorf("priced=%d cost=$%f, want 1 priced response with positive savings",
 			snap.PricedResponses, snap.CostSavedUSD)
+	}
+}
+
+func TestProxyMetersUsageThroughGzip(t *testing.T) {
+	// Regression: the Anthropic/OpenAI SDKs send Accept-Encoding: gzip. If the
+	// proxy forwarded that header, Go's transport would hand back a gzipped body
+	// and usage metering would parse nothing. The proxy must strip it so the
+	// transport decodes the body — proving metering still works when the upstream
+	// gzips its response.
+	// OpenAI usage shape: cached_tokens is a subset of prompt_tokens.
+	usage := []byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":50,` +
+		`"prompt_tokens_details":{"cached_tokens":800}}}`)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		_, _ = gz.Write(usage)
+		_ = gz.Close()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer upstream.Close()
+
+	ts := newTestServer(t, upstream.URL, &fakeOptimizer{})
+	defer ts.Close()
+
+	// Client asks for gzip, exactly like the real SDKs do.
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	var snap Snapshot
+	sr, _ := http.Get(ts.URL + "/__brevitas/stats")
+	defer sr.Body.Close()
+	_ = json.NewDecoder(sr.Body).Decode(&snap)
+	if snap.CacheReadTokens != 800 || snap.InputTokens != 200 {
+		t.Fatalf("usage not metered through gzip: read=%d input=%d (want 800, 200)",
+			snap.CacheReadTokens, snap.InputTokens)
+	}
+}
+
+func TestCopyRequestHeadersDropsAcceptEncoding(t *testing.T) {
+	src := http.Header{}
+	src.Set("Accept-Encoding", "gzip, br")
+	src.Set("x-api-key", "keep-me")
+	dst := http.Header{}
+	copyRequestHeaders(dst, src)
+	if dst.Get("Accept-Encoding") != "" {
+		t.Errorf("Accept-Encoding should be dropped, got %q", dst.Get("Accept-Encoding"))
+	}
+	if dst.Get("x-api-key") != "keep-me" {
+		t.Errorf("credentials must be preserved, got %q", dst.Get("x-api-key"))
 	}
 }
 
