@@ -20,11 +20,10 @@ import (
 
 // fakeOptimizer rewrites the model to prove the optimize hook is applied.
 type fakeOptimizer struct {
-	called    bool
-	fail      bool
-	cacheHit  []byte // when non-nil, Optimize returns a cache hit with this body
-	recorded  bool   // set when Record is called
-	recordReq *optimizer.RecordRequest
+	called   bool
+	fail     bool
+	cacheHit []byte // when non-nil, Optimize returns a cache hit with this body
+	recorded chan *optimizer.RecordRequest
 }
 
 func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*optimizer.Response, error) {
@@ -44,8 +43,9 @@ func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*op
 func (f *fakeOptimizer) Health(context.Context) error            { return nil }
 func (f *fakeOptimizer) Version(context.Context) (string, error) { return "test", nil }
 func (f *fakeOptimizer) Record(_ context.Context, req *optimizer.RecordRequest) error {
-	f.recorded = true
-	f.recordReq = req
+	if f.recorded != nil {
+		f.recorded <- req
+	}
 	return nil
 }
 
@@ -328,7 +328,8 @@ func TestProxyRecordsNonStreamResponse(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	opt := &fakeOptimizer{}
+	recorded := make(chan *optimizer.RecordRequest, 1)
+	opt := &fakeOptimizer{recorded: recorded}
 	ts := newTestServer(t, upstream.URL, opt)
 	defer ts.Close()
 
@@ -341,16 +342,13 @@ func TestProxyRecordsNonStreamResponse(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Record runs in a detached goroutine; give it a moment.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && !opt.recorded {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !opt.recorded {
+	select {
+	case record := <-recorded:
+		if string(record.Response) != `{"answer":42}` {
+			t.Errorf("recorded response = %q", record.Response)
+		}
+	case <-time.After(2 * time.Second):
 		t.Fatal("Record was not called for a non-stream 200")
-	}
-	if opt.recordReq == nil || string(opt.recordReq.Response) != `{"answer":42}` {
-		t.Errorf("recorded response = %q", opt.recordReq.Response)
 	}
 }
 

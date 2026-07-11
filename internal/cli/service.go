@@ -103,6 +103,10 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 			return false
 		}
 	}
+	if output, err := exec.CommandContext(ctx, python, "-m", "pip", "install", "--upgrade", "pip", "setuptools").CombinedOutput(); err != nil {
+		a.fail("optimizer install: secure Python tooling: %v: %s", err, output)
+		return false
+	}
 	sys = optimizer.NewSystems(python)
 	a.say("Installing brevitas-systems %s...", version.PinnedSystemsVersion)
 	if err := sys.Upgrade(ctx); err != nil {
