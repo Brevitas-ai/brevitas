@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
@@ -60,6 +61,9 @@ func (a *App) cmdOptimizer(ctx context.Context, _ []string) error {
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if os.Getenv("BREVITAS_CACHE_DB") == "" {
+		_ = os.Setenv("BREVITAS_CACHE_DB", filepath.Join(a.Dirs.Data, "semantic_cache.db"))
+	}
 
 	a.say("Starting Brevitas optimizer via %s (%s)", python, a.Cfg.Optimizer.Address)
 	return runForeground(ctx, python, args, a.Err)

@@ -45,7 +45,8 @@ name = "Brevitas"
 base_url = %q
 env_key = "OPENAI_API_KEY"
 wire_api = "responses"
-http_headers = { "X-Brevitas-Client" = "codex" }`, p.OpenAIBaseURL())
+http_headers = { "X-Brevitas-Client" = "codex" }
+env_http_headers = { "X-Brevitas-Repo" = "PWD" }`, p.OpenAIBaseURL())
 	return p.EditManagedBlockAt(p.configPath(), block, true)
 }
 

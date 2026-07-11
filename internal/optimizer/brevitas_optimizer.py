@@ -32,12 +32,8 @@ except Exception as exc:  # pragma: no cover
 VERSION = getattr(brevitas, "__version__", "0.9.10")
 
 
-# Prefer the task-aware compression router: it classifies the prompt (code /
-# creative / summarize / ...), picks a per-task keep-rate, protects code blocks,
-# and uses LLMLingua-2 for real token reduction when the optional extra is
-# installed (pip install "brevitas-systems[promptopt]"). Without that extra it
-# transparently falls back to lossless (whitespace only) — which is why savings
-# are small until the extra is installed.
+# The optional task-aware router is used only when BREVITAS_TEXT_COMPRESS=1.
+# Default lossless optimization stays fast and dependency-free.
 try:
     _router = brevitas.TaskCompressionRouter(protect_code=True)
 except Exception:
@@ -151,8 +147,12 @@ def _usage_from_response(provider: str, response: dict) -> tuple:
 
 def cache_lookup(provider: str, model: str, body: dict, key_id: str):
     """Return the stored provider response for a byte-identical repeat, else None."""
+    # SemanticCache's key is chat-shaped. Do not cache other wire formats until
+    # their complete request identity is part of that key.
+    if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
+        return None
     cache = _cache_for(key_id)
-    if cache is None or not isinstance(body, dict):
+    if cache is None:
         return None
     try:
         hit = cache.lookup(body, provider, model)  # cacheable() gate is inside
@@ -164,8 +164,10 @@ def cache_lookup(provider: str, model: str, body: dict, key_id: str):
 
 
 def cache_store(provider: str, model: str, body: dict, response: dict, key_id: str) -> None:
+    if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
+        return
     cache = _cache_for(key_id)
-    if cache is None or not isinstance(body, dict) or not isinstance(response, dict):
+    if cache is None or not isinstance(response, dict):
         return
     try:
         p, c = _usage_from_response(provider, response)
@@ -212,7 +214,7 @@ def _optimize_text(text: str):
         return text, 0, 0, False, "noop"
 
     opt = None
-    if _router is not None:
+    if _router is not None and _TEXT_COMPRESS_ON:
         try:
             opt = _router.route(text).optimization  # auto-classifies the task
         except Exception:

@@ -19,14 +19,17 @@ var hopByHopHeaders = map[string]struct{}{
 	"proxy-authorization": {},
 }
 
-// copyRequestHeaders copies safe headers from in to out, dropping only
-// hop-by-hop headers and connection-managed fields. Crucially it FORWARDS the
+// copyRequestHeaders copies safe headers from in to out, dropping internal
+// Brevitas metadata, hop-by-hop headers, and connection-managed fields. It FORWARDS the
 // caller's credentials (Authorization / x-api-key / x-goog-api-key): each AI
 // tool already holds the user's real provider key, and Brevitas optimizes in
 // the middle without touching authentication.
 func copyRequestHeaders(dst http.Header, src http.Header) {
 	for k, vals := range src {
 		lk := strings.ToLower(k)
+		if strings.HasPrefix(lk, "x-brevitas-") {
+			continue
+		}
 		if _, hop := hopByHopHeaders[lk]; hop {
 			continue
 		}

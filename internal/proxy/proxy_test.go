@@ -446,6 +446,7 @@ func TestCopyRequestHeadersDropsAcceptEncoding(t *testing.T) {
 	src := http.Header{}
 	src.Set("Accept-Encoding", "gzip, br")
 	src.Set("x-api-key", "keep-me")
+	src.Set("X-Brevitas-Repo", "/private/customer/repo")
 	dst := http.Header{}
 	copyRequestHeaders(dst, src)
 	if dst.Get("Accept-Encoding") != "" {
@@ -453,6 +454,9 @@ func TestCopyRequestHeadersDropsAcceptEncoding(t *testing.T) {
 	}
 	if dst.Get("x-api-key") != "keep-me" {
 		t.Errorf("credentials must be preserved, got %q", dst.Get("x-api-key"))
+	}
+	if dst.Get("X-Brevitas-Repo") != "" {
+		t.Errorf("internal metadata must not reach providers, got %q", dst.Get("X-Brevitas-Repo"))
 	}
 }
 
