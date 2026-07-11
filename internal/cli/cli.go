@@ -53,7 +53,7 @@ var commands = []command{
 	{"restart", "Restart the background proxy service", (*App).cmdRestart},
 	{"logs", "Print (or follow) the proxy logs", (*App).cmdLogs},
 	{"config", "Print or edit Brevitas configuration", (*App).cmdConfig},
-	{"login", "Store the Brevitas API key in the OS credential store", (*App).cmdLogin},
+	{"login", "Connect through the Brevitas dashboard and store the key securely", (*App).cmdLogin},
 	{"logout", "Remove the stored Brevitas API key", (*App).cmdLogout},
 	{"update", "Check for and upgrade the brevitas-systems package", (*App).cmdUpdate},
 	{"serve", "Run the proxy in the foreground (used by the service manager)", (*App).cmdServe},

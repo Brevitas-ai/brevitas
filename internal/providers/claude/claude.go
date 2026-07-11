@@ -44,6 +44,7 @@ func (p *Provider) Install(ctx context.Context) error {
 			env = map[string]any{}
 		}
 		env["ANTHROPIC_BASE_URL"] = p.ProxyURL()
+		env["ANTHROPIC_CUSTOM_HEADERS"] = "X-Brevitas-Client: claude-code"
 		if brevitasKey != "" {
 			if v, ok := env["ANTHROPIC_API_KEY"].(string); ok && v == brevitasKey {
 				delete(env, "ANTHROPIC_API_KEY")

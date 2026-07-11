@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Brevitas-ai/brevitas/internal/cloud"
 	"github.com/Brevitas-ai/brevitas/internal/config"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
@@ -53,11 +54,109 @@ func newTestServer(t *testing.T, upstream string, opt optimizer.Client) *httptes
 	cfg := config.Default()
 	cfg.Upstreams["openai"] = upstream
 	srv := New(Options{
-		Config:    cfg,
-		Optimizer: opt,
-		APIKey:    func(context.Context) (string, error) { return "sk-brevitas", nil },
+		Config:      cfg,
+		Optimizer:   opt,
+		APIKey:      func(context.Context) (string, error) { return "sk-brevitas", nil },
+		ReportUsage: func(context.Context, string, cloud.UsageReport) error { return nil },
 	})
 	return httptest.NewServer(srv.Handler())
+}
+
+func TestProxyReportsTenantScopedCloudReceipt(t *testing.T) {
+	type captured struct {
+		key    string
+		report cloud.UsageReport
+	}
+	reports := make(chan captured, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"x","usage":{"prompt_tokens":20,"prompt_tokens_details":{"cached_tokens":5},"completion_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	cfg := config.Default()
+	cfg.Upstreams["openai"] = upstream.URL
+	srv := New(Options{
+		Config: cfg, Optimizer: &fakeOptimizer{},
+		APIKey: func(context.Context) (string, error) { return "bvt_customer", nil },
+		ReportUsage: func(_ context.Context, key string, report cloud.UsageReport) error {
+			reports <- captured{key, report}
+			return nil
+		},
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"private prompt"}]}`))
+	req.Header.Set("X-Brevitas-Project", "billing-app")
+	req.Header.Set("X-Brevitas-Client", "codex")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	select {
+	case got := <-reports:
+		if got.key != "bvt_customer" || got.report.Project != "billing-app" || got.report.Repo != "billing-app" || got.report.Client != "codex" {
+			t.Fatalf("wrong tenant labels: %#v", got)
+		}
+		if got.report.FreshInputTokens != 15 || got.report.CachedInputTokens != 5 || got.report.OutputTokens != 2 {
+			t.Fatalf("wrong receipt: %#v", got.report)
+		}
+		encoded, _ := json.Marshal(got.report)
+		if bytes.Contains(encoded, []byte("private prompt")) {
+			t.Fatal("cloud receipt contained model content")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cloud receipt was not reported")
+	}
+}
+
+func TestCloudReceiptUsesSafeRepoOverride(t *testing.T) {
+	t.Setenv("BREVITAS_REPO", "/private/customer/checkout-service")
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	report := newCloudReport(req, FamilyOpenAI, "gpt-4o-mini", nil, nil, false)
+	if report.Repo != "checkout-service" || report.Project != "checkout-service" {
+		t.Fatalf("unsafe repo labels: %#v", report)
+	}
+}
+
+func TestProxyReportsStreamingCloudReceipt(t *testing.T) {
+	reports := make(chan cloud.UsageReport, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"usage\":{\"prompt_tokens\":12,\"prompt_tokens_details\":{\"cached_tokens\":4},\"completion_tokens\":3}}\n\n")
+	}))
+	defer upstream.Close()
+	cfg := config.Default()
+	cfg.Upstreams["openai"] = upstream.URL
+	srv := New(Options{
+		Config: cfg, Optimizer: &fakeOptimizer{},
+		APIKey: func(context.Context) (string, error) { return "bvt_stream", nil },
+		ReportUsage: func(_ context.Context, _ string, report cloud.UsageReport) error {
+			reports <- report
+			return nil
+		},
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json",
+		strings.NewReader(`{"model":"gpt-4o-mini","stream":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	select {
+	case report := <-reports:
+		if !report.IsStream || report.CachedInputTokens != 4 || report.OutputTokens != 3 {
+			t.Fatalf("wrong streaming receipt: %#v", report)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("streaming cloud receipt was not reported")
+	}
 }
 
 func TestProxyOptimizesAndForwards(t *testing.T) {
@@ -333,7 +432,10 @@ func TestProxyMetersUsageThroughGzip(t *testing.T) {
 	resp.Body.Close()
 
 	var snap Snapshot
-	sr, _ := http.Get(ts.URL + "/__brevitas/stats")
+	sr, err := http.Get(ts.URL + "/__brevitas/stats")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer sr.Body.Close()
 	_ = json.NewDecoder(sr.Body).Decode(&snap)
 	if snap.CacheReadTokens != 800 || snap.InputTokens != 200 {

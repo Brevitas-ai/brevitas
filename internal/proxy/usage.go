@@ -34,6 +34,10 @@ type rawUsage struct {
 	PromptTokensDetails struct {
 		CachedTokens int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	// OpenAI Responses API
+	InputTokensDetails struct {
+		CachedTokens int64 `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
 }
 
 // merge folds any non-zero field of o into r. Used to stitch a streaming
@@ -61,6 +65,9 @@ func (r *rawUsage) merge(o rawUsage) {
 	if o.PromptTokensDetails.CachedTokens != 0 {
 		r.PromptTokensDetails.CachedTokens = o.PromptTokensDetails.CachedTokens
 	}
+	if o.InputTokensDetails.CachedTokens != 0 {
+		r.InputTokensDetails.CachedTokens = o.InputTokensDetails.CachedTokens
+	}
 }
 
 // normalize converts a raw usage block into the provider-neutral usage struct.
@@ -74,12 +81,19 @@ func (r rawUsage) normalize(family Family) usage {
 			cacheWrite:   r.CacheCreationInputTokens,
 		}
 	}
+	prompt := r.PromptTokens
+	output := r.CompletionTokens
 	cached := r.PromptTokensDetails.CachedTokens
-	in := r.PromptTokens - cached
+	if prompt == 0 && (r.InputTokens != 0 || r.OutputTokens != 0 || r.InputTokensDetails.CachedTokens != 0) {
+		prompt = r.InputTokens
+		output = r.OutputTokens
+		cached = r.InputTokensDetails.CachedTokens
+	}
+	in := prompt - cached
 	if in < 0 {
 		in = 0
 	}
-	return usage{inputTokens: in, outputTokens: r.CompletionTokens, cacheRead: cached}
+	return usage{inputTokens: in, outputTokens: output, cacheRead: cached}
 }
 
 // extractUsage pulls the usage block out of a complete (non-streamed) provider
@@ -145,6 +159,9 @@ func (sn *usageSniffer) feedLine(line []byte) {
 		Message struct {
 			Usage *rawUsage `json:"usage"`
 		} `json:"message"`
+		Response struct {
+			Usage *rawUsage `json:"usage"`
+		} `json:"response"`
 	}
 	if json.Unmarshal(s, &ev) != nil {
 		return
@@ -154,6 +171,9 @@ func (sn *usageSniffer) feedLine(line []byte) {
 	}
 	if ev.Usage != nil {
 		sn.raw.merge(*ev.Usage)
+	}
+	if ev.Response.Usage != nil {
+		sn.raw.merge(*ev.Response.Usage)
 	}
 }
 

@@ -15,12 +15,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Brevitas-ai/brevitas/internal/cloud"
 	"github.com/Brevitas-ai/brevitas/internal/config"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
 // APIKeyFunc returns the Brevitas API key used for upstream auth.
 type APIKeyFunc func(ctx context.Context) (string, error)
+type UsageReportFunc func(ctx context.Context, apiKey string, report cloud.UsageReport) error
 
 // Server is the local optimization proxy.
 type Server struct {
@@ -31,14 +33,16 @@ type Server struct {
 	transport *http.Transport
 	httpSrv   *http.Server
 	stats     *Stats
+	report    UsageReportFunc
 }
 
 // Options bundles the injected dependencies for a Server.
 type Options struct {
-	Config    *config.Config
-	Optimizer optimizer.Client
-	APIKey    APIKeyFunc
-	Logger    *slog.Logger
+	Config      *config.Config
+	Optimizer   optimizer.Client
+	APIKey      APIKeyFunc
+	Logger      *slog.Logger
+	ReportUsage UsageReportFunc
 }
 
 // New builds a proxy Server. All dependencies are injected for testability.
@@ -48,6 +52,9 @@ func New(opts Options) *Server {
 	}
 	if opts.APIKey == nil {
 		opts.APIKey = func(context.Context) (string, error) { return "", nil }
+	}
+	if opts.ReportUsage == nil {
+		opts.ReportUsage = cloud.ReportUsage
 	}
 
 	transport := &http.Transport{
@@ -72,6 +79,7 @@ func New(opts Options) *Server {
 		log:       opts.Logger,
 		transport: transport,
 		stats:     newStats(),
+		report:    opts.ReportUsage,
 	}
 
 	mux := http.NewServeMux()
@@ -158,7 +166,8 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, snif
 // hands the (original request, response) pair to the sidecar so it can populate
 // the response cache and report usage. Recording is fire-and-forget on a
 // detached context — it must never delay or fail the client's response.
-func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response, rec *optimizer.RecordRequest) {
+func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response,
+	rec *optimizer.RecordRequest, apiKey string, report cloud.UsageReport) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.Proxy.MaxBodyBytes))
 	if err != nil {
 		// Fall back to a plain stream of whatever we did read; don't record a partial.
@@ -182,14 +191,32 @@ func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response, rec
 
 	// Meter the real usage the provider reported (cache-read/write tokens and
 	// the dollars they saved) so `bvx stats` can answer "did caching help".
-	s.stats.recordUsage(Family(rec.Provider), rec.Model, extractUsage(Family(rec.Provider), body))
+	usage := extractUsage(Family(report.Provider), body)
+	s.stats.recordUsage(Family(report.Provider), report.Model, usage)
+	s.reportCloud(apiKey, reportWithUsage(report, usage))
 
+	if rec == nil || s.opt == nil {
+		return
+	}
 	rec.Response = body
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := s.opt.Record(ctx, rec); err != nil {
 			s.log.Debug("cache record failed", "err", err)
+		}
+	}()
+}
+
+func (s *Server) reportCloud(apiKey string, report cloud.UsageReport) {
+	if apiKey == "" || s.report == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.report(ctx, apiKey, report); err != nil {
+			s.log.Debug("cloud usage report failed", "err", err)
 		}
 	}()
 }

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -40,7 +39,7 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 func (a *App) installAITools(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("install ai", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
-	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (otherwise prompted or read from BREVITAS_API_KEY)")
+	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
 	noService := fs.Bool("no-service", false, "configure tools but do not install the background service")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -143,28 +142,16 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	return nil
 }
 
-// ensureAPIKey stores the API key, prompting if necessary.
+// ensureAPIKey stores an explicitly supplied key or authorizes through the dashboard.
 func (a *App) ensureAPIKey(ctx context.Context, provided string) error {
 	if provided == "" && a.hasKey(ctx) {
 		a.say("Using existing Brevitas API key from %s.", a.Keyring.Backend())
 		return nil
 	}
-	key := provided
-	if key == "" {
-		var err error
-		key, err = a.promptSecret("Enter Brevitas API key: ")
-		if err != nil {
-			return fmt.Errorf("read api key: %w", err)
-		}
+	if provided != "" {
+		return a.storeAPIKey(ctx, provided)
 	}
-	if key == "" {
-		return errors.New("no API key provided")
-	}
-	if err := a.Keyring.Set(ctx, key); err != nil {
-		return fmt.Errorf("store api key in %s: %w", a.Keyring.Backend(), err)
-	}
-	a.ok("API key stored in %s", a.Keyring.Backend())
-	return nil
+	return a.loginWithBrowser(ctx, true)
 }
 
 func providerNames(ps []provider.Provider) []string {

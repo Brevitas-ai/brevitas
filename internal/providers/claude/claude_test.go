@@ -49,6 +49,9 @@ func TestClaudeRemovesStaleBrevitasKey(t *testing.T) {
 	if envMap["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:8080" {
 		t.Errorf("base url not set: %v", envMap["ANTHROPIC_BASE_URL"])
 	}
+	if envMap["ANTHROPIC_CUSTOM_HEADERS"] != "X-Brevitas-Client: claude-code" {
+		t.Errorf("client label not set: %v", envMap["ANTHROPIC_CUSTOM_HEADERS"])
+	}
 	if root["keep"] == nil {
 		t.Errorf("unrelated setting was dropped: %s", raw)
 	}

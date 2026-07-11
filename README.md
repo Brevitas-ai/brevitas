@@ -33,8 +33,8 @@ bvx install <repo>        # scan a codebase and wire Brevitas into its agents
 ### `bvx install ai`
 
 1. Scan your system for supported AI tools
-2. Ask once for your Brevitas API key
-3. Store it in your OS credential store (Keychain / Credential Manager / Secret Service)
+2. Open the Brevitas dashboard for one-click account authorization
+3. Store the dedicated device key in your OS credential store (Keychain / Credential Manager / Secret Service)
 4. Rewrite each supported tool's **documented** config to use `http://127.0.0.1:8080`
 5. Install and start the background services (proxy + optimizer)
 6. Run diagnostics and print a summary
@@ -71,7 +71,8 @@ Scanning system...
 
 Detected 4 configurable tool(s), 1 manual, 1 unsupported.
 
-Enter Brevitas API key: ****************
+Opening https://brevitassystems.com/dashboard#bvx=...
+Waiting for approval... approved
 
 Installing...
 
@@ -163,17 +164,16 @@ not available, instead of attempting a fragile or unsafe workaround.
 
 ## Seeing token savings
 
-The proxy delegates optimization to the **brevitas-systems** package (the
-lossless token-efficiency model) running as a local service. Wire it up:
+The proxy delegates optimization to the **brevitas-systems** package running as
+a local service. `bvx install` installs the pinned version and starts it:
 
 ```sh
-pip install brevitas-systems==0.9.9   # the optimization brain (pinned)
-bvx optimizer               # runs the adapter that serves the socket the proxy dials
-                                 # (auto-detects the Python that has brevitas)
-bvx serve                   # or the background service — the proxy tools point at
+bvx install
+bvx status
 ```
 
-Then send traffic through the proxy and watch savings accumulate:
+Then send traffic through the proxy and watch savings accumulate locally and in
+your account at https://brevitassystems.com/dashboard:
 
 ```sh
 bvx stats
@@ -187,6 +187,9 @@ bvx stats
 Per-request savings are also logged (`bvx logs`). If the optimizer isn't
 running, the proxy **fails open** — requests forward unchanged, nothing breaks,
 and stats simply show 0 saved.
+
+Cloud receipts contain only numeric token/cost categories and short labels. They
+never contain prompts, responses, code, absolute paths, Git remotes, or provider keys.
 
 ## How it works
 

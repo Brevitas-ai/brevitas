@@ -29,6 +29,15 @@ func TestExtractUsageOpenAISplitsCached(t *testing.T) {
 	}
 }
 
+func TestExtractUsageOpenAIResponses(t *testing.T) {
+	body := []byte(`{"usage":{"input_tokens":1000,"output_tokens":30,` +
+		`"input_tokens_details":{"cached_tokens":800}}}`)
+	u := extractUsage(FamilyOpenAI, body)
+	if u.inputTokens != 200 || u.cacheRead != 800 || u.outputTokens != 30 {
+		t.Fatalf("responses usage = %+v", u)
+	}
+}
+
 func TestExtractUsageEmptyOnGarbage(t *testing.T) {
 	if u := extractUsage(FamilyAnthropic, []byte("not json")); !u.empty() {
 		t.Errorf("garbage body should yield empty usage, got %+v", u)
@@ -52,6 +61,18 @@ func TestUsageSnifferStitchesAnthropicStream(t *testing.T) {
 	u := sn.result()
 	if u.cacheRead != 500 || u.cacheWrite != 20 || u.inputTokens != 10 || u.outputTokens != 33 {
 		t.Fatalf("sniffed usage = %+v", u)
+	}
+}
+
+func TestUsageSnifferReadsOpenAIResponsesCompleted(t *testing.T) {
+	sn := newUsageSniffer(FamilyOpenAI)
+	sn.Write([]byte(`event: response.completed
+data: {"type":"response.completed","response":{"usage":{"input_tokens":1200,"output_tokens":40,"input_tokens_details":{"cached_tokens":900}}}}
+
+`))
+	u := sn.result()
+	if u.inputTokens != 300 || u.cacheRead != 900 || u.outputTokens != 40 {
+		t.Fatalf("responses stream usage = %+v", u)
 	}
 }
 

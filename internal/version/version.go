@@ -25,11 +25,11 @@ var (
 	// PinnedSystemsVersion is the exact brevitas-systems version this installer
 	// installs and upgrades to. Pinning keeps the proxy and the optimization
 	// brain in lockstep.
-	PinnedSystemsVersion = "0.9.9"
+	PinnedSystemsVersion = "0.9.10"
 )
 
 // SystemsPipSpec returns the pip requirement specifier for the pinned
-// brevitas-systems version, e.g. "brevitas-systems==0.9.9".
+// brevitas-systems version, e.g. "brevitas-systems==0.9.10".
 func SystemsPipSpec() string {
 	return "brevitas-systems==" + PinnedSystemsVersion
 }

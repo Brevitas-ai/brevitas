@@ -80,6 +80,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// error on json.RawMessage marshaling.
 	outBody := body
 	optHeaders := map[string]string{}
+	var requestSavings *optimizer.Savings
+	var applied []string
 	if s.opt != nil && len(body) > 0 && json.Valid(body) {
 		optReq := &optimizer.Request{
 			Provider: string(rt.Family),
@@ -104,12 +106,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(resp.CachedResponse)
 			s.stats.markCacheHit()
+			s.reportCloud(apiKey, cacheHitCloudReport(r, rt.Family, meta.Model, resp.CachedResponse))
 			s.log.Info("cache hit", "family", rt.Family, "model", meta.Model,
 				"kind", resp.CacheKind, "dur_ms", time.Since(start).Milliseconds())
 			return
 		case resp.Bypass:
 			s.log.Debug("optimizer bypassed request", "family", rt.Family)
 		default:
+			requestSavings = resp.Savings
+			applied = append(applied, resp.Applied...)
 			if len(resp.Body) > 0 {
 				outBody = resp.Body
 			}
@@ -147,14 +152,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// Non-stream 200s are handed back to the sidecar to populate the response
 	// cache (it applies its own cacheable() gate) and report usage. Streams and
 	// errors are streamed straight through and never cached.
-	if s.opt != nil && !meta.Stream && resp.StatusCode == http.StatusOK {
-		s.streamAndRecord(w, resp, &optimizer.RecordRequest{
-			Provider: string(rt.Family),
-			Model:    meta.Model,
-			KeyID:    optimizerKeyID(apiKey),
-			Headers:  flattenHeaders(r.Header),
-			Body:     json.RawMessage(body),
-		})
+	report := newCloudReport(r, rt.Family, meta.Model, requestSavings, applied, meta.Stream)
+	if !meta.Stream && resp.StatusCode == http.StatusOK {
+		var record *optimizer.RecordRequest
+		if s.opt != nil {
+			record = &optimizer.RecordRequest{
+				Provider: string(rt.Family),
+				Model:    meta.Model,
+				KeyID:    optimizerKeyID(apiKey),
+				Headers:  flattenHeaders(r.Header),
+				Body:     json.RawMessage(body),
+			}
+		}
+		s.streamAndRecord(w, resp, record, apiKey, report)
 	} else {
 		// Meter usage off streamed completions too — the SSE trailer carries the
 		// same cache-read/write token counts, so caching stats aren't blind to the
@@ -166,7 +176,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Brevitas-Cache", "miss")
 		s.streamResponse(w, resp, sniff)
 		if sniff != nil {
-			s.stats.recordUsage(rt.Family, meta.Model, sniff.result())
+			usage := sniff.result()
+			s.stats.recordUsage(rt.Family, meta.Model, usage)
+			s.reportCloud(apiKey, reportWithUsage(report, usage))
 		}
 	}
 	s.log.Info("proxied",

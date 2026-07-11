@@ -60,6 +60,9 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 		a.say("\nTo route this codebase through Brevitas: bvx install %s --apply", repo)
 		return nil
 	}
+	if err := a.ensureAPIKey(ctx, ""); err != nil {
+		return err
+	}
 
 	// 2. Apply: write routing env vars (and optionally rewrite hardcoded URLs)
 	//    so the codebase's calls flow through the Brevitas proxy.
@@ -73,7 +76,8 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 		return fmt.Errorf("agentmap install: %w", err)
 	}
 	a.say("\nDone. `source %s/.env.agentmap` before running your agents.", abs)
-	a.say("Ensure the Brevitas proxy is running: bvx status")
+	a.installServices(ctx)
+	a.say("Check the installation at any time with: bvx status")
 	return nil
 }
 

@@ -5,26 +5,84 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os/exec"
+	"runtime"
+	"time"
 
+	"github.com/Brevitas-ai/brevitas/internal/cloud"
 	"github.com/Brevitas-ai/brevitas/internal/keyring"
 )
+
+var openBrowser = func(url string) error {
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		command = exec.Command("open", url)
+	case "windows":
+		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		command = exec.Command("xdg-open", url)
+	}
+	return command.Start()
+}
 
 func (a *App) cmdLogin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
-	keyFlag := fs.String("api-key", "", "Brevitas API key (otherwise prompted)")
+	keyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
+	noOpen := fs.Bool("no-open", false, "print the authorization URL without opening a browser")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	key := *keyFlag
-	if key == "" {
-		var err error
-		key, err = a.promptSecret("Enter Brevitas API key: ")
-		if err != nil {
-			return err
+	if *keyFlag != "" {
+		return a.storeAPIKey(ctx, *keyFlag)
+	}
+	return a.loginWithBrowser(ctx, !*noOpen)
+}
+
+func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
+	auth, err := cloud.StartDeviceAuthorization(ctx)
+	if err != nil {
+		return fmt.Errorf("start browser login: %w", err)
+	}
+	a.say("Open this URL to connect bvx:\n  %s", auth.VerificationURIComplete)
+	if shouldOpen {
+		if err := openBrowser(auth.VerificationURIComplete); err != nil {
+			a.warn("Could not open a browser; use the URL above")
 		}
 	}
+	a.say("\nWaiting for approval...")
+
+	expires := time.Duration(auth.ExpiresIn) * time.Second
+	if expires <= 0 {
+		expires = 10 * time.Minute
+	}
+	loginCtx, cancel := context.WithTimeout(ctx, expires)
+	defer cancel()
+	interval := time.Duration(auth.Interval) * time.Second
+	if interval <= 0 {
+		interval = 100 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		key, pending, err := cloud.PollDeviceAuthorization(loginCtx, auth.DeviceCode)
+		if err != nil {
+			return fmt.Errorf("finish browser login: %w", err)
+		}
+		if !pending {
+			return a.storeAPIKey(ctx, key)
+		}
+		select {
+		case <-loginCtx.Done():
+			return errors.New("browser login expired; run `bvx login` again")
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *App) storeAPIKey(ctx context.Context, key string) error {
 	if key == "" {
 		return errors.New("no API key provided")
 	}

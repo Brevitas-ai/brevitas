@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/Brevitas-ai/brevitas/internal/logging"
@@ -70,6 +73,62 @@ func (a *App) optimizerAvailable(ctx context.Context) bool {
 	return true
 }
 
+func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
+	sys := a.systems()
+	current, err := sys.Version(ctx)
+	if err == nil && optimizer.CompareVersions(current, version.PinnedSystemsVersion) == 0 {
+		return a.optimizerAvailable(ctx)
+	}
+
+	// Keep the Python package in Brevitas's own virtual environment. This avoids
+	// mutating the user's Python and works with Homebrew's externally-managed
+	// Python installations (PEP 668).
+	venv := filepath.Join(a.Dirs.Data, "python")
+	python := filepath.Join(venv, "bin", "python3")
+	if runtime.GOOS == "windows" {
+		python = filepath.Join(venv, "Scripts", "python.exe")
+	}
+	if _, statErr := os.Stat(python); os.IsNotExist(statErr) {
+		if err := a.Dirs.EnsureAll(); err != nil {
+			a.fail("optimizer install: %v", err)
+			return false
+		}
+		base := firstPython(a.Cfg.Optimizer.PythonBin, "python3", "python3.13", "python")
+		if base == "" {
+			a.fail("optimizer install: Python 3 is required")
+			return false
+		}
+		if output, err := exec.CommandContext(ctx, base, "-m", "venv", venv).CombinedOutput(); err != nil {
+			a.fail("optimizer install: create Python environment: %v: %s", err, output)
+			return false
+		}
+	}
+	sys = optimizer.NewSystems(python)
+	a.say("Installing brevitas-systems %s...", version.PinnedSystemsVersion)
+	if err := sys.Upgrade(ctx); err != nil {
+		a.fail("optimizer install: %v", err)
+		return false
+	}
+	a.Cfg.Optimizer.PythonBin = python
+	if err := a.Cfg.Save(); err != nil {
+		a.warn("Could not save the managed Python path: %v", err)
+	}
+	a.ok("brevitas-systems %s installed", version.PinnedSystemsVersion)
+	return a.optimizerAvailable(ctx)
+}
+
+func firstPython(candidates ...string) string {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 // ensureStarted installs the service if needed, then starts it.
 func (a *App) ensureStarted(ctx context.Context, mgr service.Manager) error {
 	if st, _ := mgr.Status(ctx); st == service.StateNotInstalled {
@@ -80,8 +139,7 @@ func (a *App) ensureStarted(ctx context.Context, mgr service.Manager) error {
 	return mgr.Start(ctx)
 }
 
-// installServices installs and starts the proxy, plus the optimizer when the
-// brevitas package is available. It prints a line per service.
+// installServices installs the pinned Python brain, then starts both services.
 func (a *App) installServices(ctx context.Context) {
 	pm, err := a.proxyManager()
 	if err != nil {
@@ -97,15 +155,14 @@ func (a *App) installServices(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if a.optimizerAvailable(ctx) {
+	if a.ensureOptimizerInstalled(ctx) {
 		if err := a.ensureStarted(ctx, om); err != nil {
 			a.fail("optimizer service: %v", err)
 		} else {
 			a.ok("Optimizer started (brevitas-systems)")
 		}
 	} else {
-		a.warn("Optimizer not started — brevitas-systems not found.")
-		a.warn("  Run: pip install %s && bvx repair", version.SystemsPipSpec())
+		a.warn("Optimizer not started; the proxy will forward requests unchanged.")
 	}
 }
 

@@ -14,6 +14,8 @@ class Bvx < Formula
   version "0.1.15"
   license "MIT"
 
+  depends_on "python@3.13"
+
   on_macos do
     on_arm do
       url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.11/bvx-0.1.11-darwin-arm64.tar.gz"
@@ -60,11 +62,10 @@ class Bvx < Formula
       Brevitas configures your AI coding tools to route through a local proxy.
 
       Next steps:
-        bvx install     # detect tools, store your API key, configure, start
+        bvx install     # sign in, detect tools, configure, start
 
-      The optimization engine (brevitas-systems) is a Python package:
-        pip install brevitas-systems==0.9.9
-        bvx update      # keep it pinned/current
+      bvx installs and pins the brevitas-systems optimization engine automatically.
+      Run `bvx update` later to keep it current.
     EOS
   end
 
