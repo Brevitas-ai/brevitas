@@ -72,6 +72,7 @@ jobs:
           l_amd="$(shasum -a 256 dist/bvx-${VERSION}-linux-amd64.tar.gz  | cut -d' ' -f1)"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/Brevitas-ai/homebrew-brevitas.git" tap
           f="tap/Formula/bvx.rb"
+          cp Formula/bvx.rb "$f"
           python3 - "$f" "$VERSION" "$d_arm" "$d_amd" "$l_arm" "$l_amd" <<'PY'
           import re, sys
           f, ver, d_arm, d_amd, l_arm, l_amd = sys.argv[1:7]
