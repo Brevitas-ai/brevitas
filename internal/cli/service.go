@@ -133,12 +133,11 @@ func firstPython(candidates ...string) string {
 	return ""
 }
 
-// ensureStarted installs the service if needed, then starts it.
+// ensureStarted refreshes the service definition so upgrades cannot keep an
+// older executable path, then starts it.
 func (a *App) ensureStarted(ctx context.Context, mgr service.Manager) error {
-	if st, _ := mgr.Status(ctx); st == service.StateNotInstalled {
-		if err := mgr.Install(ctx); err != nil {
-			return err
-		}
+	if err := mgr.Install(ctx); err != nil {
+		return err
 	}
 	return mgr.Start(ctx)
 }
