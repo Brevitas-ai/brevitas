@@ -11,7 +11,7 @@
 class Bvx < Formula
   desc "Middleware installer that routes AI coding assistants through Brevitas"
   homepage "https://github.com/Brevitas-ai/brevitas"
-  version "0.1.17"
+  version "0.1.18"
   license "MIT"
 
   # Bleeding-edge source build (requires Go, only used with --HEAD).
@@ -24,23 +24,23 @@ class Bvx < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.17/bvx-0.1.17-darwin-arm64.tar.gz"
-      sha256 "85c9c74154e9df4915e221ac7eda0f3340b9c8d42ae098a0c05e0fb101ec902e"
+      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.18/bvx-0.1.18-darwin-arm64.tar.gz"
+      sha256 "698db8875b43ce20f5c0a659216ac3ff26272e059e697330032a86ab8f198fd2"
     end
     on_intel do
-      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.17/bvx-0.1.17-darwin-amd64.tar.gz"
-      sha256 "f435754f8dc342fb51585f2e6267ba5ef6ff3d324aa9f59f6e7b569da6f2a6c0"
+      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.18/bvx-0.1.18-darwin-amd64.tar.gz"
+      sha256 "b58d4a7caa2889fa13eb2d9484373ecc2e4f3f5e0f52aaa018fbc2e892cec8cd"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.17/bvx-0.1.17-linux-arm64.tar.gz"
-      sha256 "1874f59e42cc2c4461d0a3053854f8f1a2073700f9329cfe0398c68704316fca"
+      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.18/bvx-0.1.18-linux-arm64.tar.gz"
+      sha256 "74151a15d87b549892944831e0cca1999ee84baf1cd504f80fb4258bca891bfe"
     end
     on_intel do
-      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.17/bvx-0.1.17-linux-amd64.tar.gz"
-      sha256 "a09ad008db0d452cf563f6c6114e0439af9ef35d5b81bb7666d82df22361aadc"
+      url "https://github.com/Brevitas-ai/brevitas/releases/download/v0.1.18/bvx-0.1.18-linux-amd64.tar.gz"
+      sha256 "09e1f1729aebf6be63b729bab4eb627634ff3c48132ec963739264f00991fc04"
     end
   end
 
