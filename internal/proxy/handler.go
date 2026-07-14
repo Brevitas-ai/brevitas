@@ -67,6 +67,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta := extractMeta(body)
+	// Did the CLIENT already request provider caching? If so, its cache reads
+	// happen with or without Brevitas, so they earn Brevitas no dollar credit.
+	clientCached := requestHasCacheControl(body)
 
 	// Load the single Brevitas API key once per request from the OS keyring.
 	apiKey, keyErr := s.apiKey(ctx)
@@ -164,7 +167,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				Body:     json.RawMessage(body),
 			}
 		}
-		s.streamAndRecord(w, resp, record, apiKey, report)
+		s.streamAndRecord(w, resp, record, apiKey, report, clientCached)
 	} else {
 		// Meter usage off streamed completions too — the SSE trailer carries the
 		// same cache-read/write token counts, so caching stats aren't blind to the
@@ -177,7 +180,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.streamResponse(w, resp, sniff)
 		if sniff != nil {
 			usage := sniff.result()
-			s.stats.recordUsage(rt.Family, meta.Model, usage)
+			s.stats.recordUsage(rt.Family, meta.Model, usage, clientCached)
 			s.reportCloud(apiKey, reportWithUsage(report, usage))
 		}
 	}

@@ -352,9 +352,9 @@ func TestProxyRecordsNonStreamResponse(t *testing.T) {
 	}
 }
 
-func TestProxyMetersUsageIntoStats(t *testing.T) {
-	// A non-stream completion whose usage block reports cached prompt tokens must
-	// surface on the /__brevitas/stats endpoint as real cache-read tokens + $.
+func TestProxyMetersButDoesNotCreditOpenAIAutoCache(t *testing.T) {
+	// OpenAI caches automatically. The proxy must MEASURE the cached tokens but
+	// must NOT credit them as Brevitas savings — Brevitas didn't cause them.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":20,` +
@@ -374,24 +374,84 @@ func TestProxyMetersUsageIntoStats(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	statsResp, err := http.Get(ts.URL + "/__brevitas/stats")
+	var snap Snapshot
+	sr, err := http.Get(ts.URL + "/__brevitas/stats")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer statsResp.Body.Close()
-	var snap Snapshot
-	if err := json.NewDecoder(statsResp.Body).Decode(&snap); err != nil {
-		t.Fatal(err)
+	defer sr.Body.Close()
+	_ = json.NewDecoder(sr.Body).Decode(&snap)
+	if snap.CacheReadTokens != 800 || snap.InputTokens != 200 {
+		t.Errorf("tokens should be measured: read=%d input=%d", snap.CacheReadTokens, snap.InputTokens)
 	}
-	if snap.CacheReadTokens != 800 {
-		t.Errorf("cache_read_tokens = %d, want 800", snap.CacheReadTokens)
-	}
-	if snap.InputTokens != 200 {
-		t.Errorf("input_tokens = %d, want 200", snap.InputTokens)
-	}
-	if snap.PricedResponses != 1 || snap.CostSavedUSD <= 0 {
-		t.Errorf("priced=%d cost=$%f, want 1 priced response with positive savings",
+	if snap.PricedResponses != 0 || snap.CostSavedUSD != 0 {
+		t.Errorf("OpenAI auto-cache must NOT be credited to Brevitas, got priced=%d $%f",
 			snap.PricedResponses, snap.CostSavedUSD)
+	}
+}
+
+// newAnthropicTestServer wires the anthropic upstream so cache_control attribution
+// can be exercised end-to-end.
+func newAnthropicTestServer(t *testing.T, upstream string, opt optimizer.Client) *httptest.Server {
+	t.Helper()
+	cfg := config.Default()
+	cfg.Upstreams["anthropic"] = upstream
+	srv := New(Options{
+		Config:      cfg,
+		Optimizer:   opt,
+		APIKey:      func(context.Context) (string, error) { return "", nil },
+		ReportUsage: func(context.Context, string, cloud.UsageReport) error { return nil },
+	})
+	return httptest.NewServer(srv.Handler())
+}
+
+func TestProxyAnthropicCreditAttribution(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"input_tokens":100,"output_tokens":20,` +
+			`"cache_read_input_tokens":900,"cache_creation_input_tokens":0}}`))
+	}))
+	defer upstream.Close()
+
+	send := func(body string) Snapshot {
+		ts := newAnthropicTestServer(t, upstream.URL, &fakeOptimizer{})
+		defer ts.Close()
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/messages", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", "k")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		var snap Snapshot
+		sr, err := http.Get(ts.URL + "/__brevitas/stats")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer sr.Body.Close()
+		_ = json.NewDecoder(sr.Body).Decode(&snap)
+		return snap
+	}
+
+	// Client did NOT set cache_control -> Brevitas caused the caching -> credited.
+	naive := send(`{"model":"claude-opus-4-8","stream":false}`)
+	if naive.PricedResponses != 1 || naive.CostSavedUSD <= 0 || naive.AttributedCacheReadTokens != 900 {
+		t.Errorf("naive client should credit Brevitas: priced=%d $%f attributed=%d",
+			naive.PricedResponses, naive.CostSavedUSD, naive.AttributedCacheReadTokens)
+	}
+
+	// Client DID set cache_control (e.g. Claude Code) -> reads happen regardless
+	// of Brevitas -> measured but NOT credited. This is the fix for the inflated $.
+	selfCaching := send(`{"model":"claude-opus-4-8","stream":false,` +
+		`"system":[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}}]}`)
+	if selfCaching.CacheReadTokens != 900 {
+		t.Errorf("reads should still be measured, got %d", selfCaching.CacheReadTokens)
+	}
+	if selfCaching.CostSavedUSD != 0 || selfCaching.PricedResponses != 0 || selfCaching.ClientCachedReadTokens != 900 {
+		t.Errorf("client-cached must not be credited: $%f priced=%d client=%d",
+			selfCaching.CostSavedUSD, selfCaching.PricedResponses, selfCaching.ClientCachedReadTokens)
 	}
 }
 

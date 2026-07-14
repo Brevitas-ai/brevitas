@@ -22,11 +22,19 @@ type Stats struct {
 	OutputTokens     atomic.Int64
 	CacheReadTokens  atomic.Int64
 	CacheWriteTokens atomic.Int64
-	// CostSavedMicros is cumulative dollars saved by caching, in micro-USD
-	// (1e-6 USD), summed only over responses whose model we can price.
+	// AttributedCacheReadTokens are the cache-read tokens Brevitas can take
+	// credit for (it inserted the breakpoints; the client had not). This is the
+	// subset of CacheReadTokens the dollar figure is computed from.
+	AttributedCacheReadTokens atomic.Int64
+	// ClientCachedReadTokens are cache-read tokens on requests that already
+	// carried cache_control (e.g. Claude Code) — the client's own caching, which
+	// happens with or without Brevitas, so it earns Brevitas no dollar credit.
+	ClientCachedReadTokens atomic.Int64
+	// CostSavedMicros is cumulative dollars BREVITAS saved by caching, in
+	// micro-USD (1e-6 USD), over responses it can be credited for and price.
 	CostSavedMicros atomic.Int64
-	// PricedResponses counts responses that carried usage AND a known model
-	// price, so the dollar figure can be shown with its coverage.
+	// PricedResponses counts responses that carried Brevitas-attributable
+	// caching AND a known model price, so the dollar figure shows its coverage.
 	PricedResponses atomic.Int64
 
 	startedUnix int64
@@ -59,9 +67,12 @@ func (s *Stats) record(before, after int) {
 	s.TokensAfter.Add(int64(after))
 }
 
-// recordUsage folds one response's real token usage (and the dollars it saved
-// via caching) into the totals. A zero usage is a no-op.
-func (s *Stats) recordUsage(family Family, model string, u usage) {
+// recordUsage folds one response's real token usage (and the dollars Brevitas
+// saved via caching) into the totals. clientCached says the request already
+// carried cache_control, so any cache reads are the client's doing, not
+// Brevitas's — the raw tokens are still measured, but no dollars are credited.
+// A zero usage is a no-op.
+func (s *Stats) recordUsage(family Family, model string, u usage, clientCached bool) {
 	if u.empty() {
 		return
 	}
@@ -69,9 +80,13 @@ func (s *Stats) recordUsage(family Family, model string, u usage) {
 	s.OutputTokens.Add(u.outputTokens)
 	s.CacheReadTokens.Add(u.cacheRead)
 	s.CacheWriteTokens.Add(u.cacheWrite)
-	if micros, known := savedMicroUSD(family, model, u); known {
+	if clientCached && u.cacheRead > 0 {
+		s.ClientCachedReadTokens.Add(u.cacheRead)
+	}
+	if micros, known := savedMicroUSD(family, model, u, !clientCached); known {
 		s.CostSavedMicros.Add(micros)
 		s.PricedResponses.Add(1)
+		s.AttributedCacheReadTokens.Add(u.cacheRead)
 	}
 }
 
@@ -92,8 +107,15 @@ type Snapshot struct {
 	CacheReadTokens  int64   `json:"cache_read_tokens"`
 	CacheWriteTokens int64   `json:"cache_write_tokens"`
 	CacheReadPct     float64 `json:"cache_read_pct"`
-	CostSavedUSD     float64 `json:"cost_saved_usd"`
-	PricedResponses  int64   `json:"priced_responses"`
+	// AttributedCacheReadTokens / ClientCachedReadTokens split the cache reads
+	// by who caused them: Brevitas (it injected the breakpoints) vs the client's
+	// own cache_control. Only the attributed share earns dollar credit.
+	AttributedCacheReadTokens int64 `json:"attributed_cache_read_tokens"`
+	ClientCachedReadTokens    int64 `json:"client_cached_read_tokens"`
+	// CostSavedUSD is BREVITAS-attributable savings only (excludes the client's
+	// own caching and OpenAI's automatic caching).
+	CostSavedUSD    float64 `json:"cost_saved_usd"`
+	PricedResponses int64   `json:"priced_responses"`
 
 	SinceUnix int64 `json:"since_unix"`
 }
@@ -128,8 +150,11 @@ func (s *Stats) snapshot() Snapshot {
 		CacheReadTokens:  cacheRead,
 		CacheWriteTokens: cacheWrite,
 		CacheReadPct:     cacheReadPct,
-		CostSavedUSD:     float64(s.CostSavedMicros.Load()) / 1e6,
-		PricedResponses:  s.PricedResponses.Load(),
-		SinceUnix:        s.startedUnix,
+
+		AttributedCacheReadTokens: s.AttributedCacheReadTokens.Load(),
+		ClientCachedReadTokens:    s.ClientCachedReadTokens.Load(),
+		CostSavedUSD:              float64(s.CostSavedMicros.Load()) / 1e6,
+		PricedResponses:           s.PricedResponses.Load(),
+		SinceUnix:                 s.startedUnix,
 	}
 }

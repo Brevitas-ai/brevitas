@@ -76,10 +76,10 @@ data: {"type":"response.completed","response":{"usage":{"input_tokens":1200,"out
 	}
 }
 
-func TestSavedMicroUSDAnthropic(t *testing.T) {
+func TestSavedMicroUSDAnthropicAttributable(t *testing.T) {
 	// Opus input is $15/1M. saved = 15 * (0.9*1000 - 0.25*100) = 15 * 875 = 13125 micros.
 	u := usage{cacheRead: 1000, cacheWrite: 100}
-	got, known := savedMicroUSD(FamilyAnthropic, "claude-opus-4-8", u)
+	got, known := savedMicroUSD(FamilyAnthropic, "claude-opus-4-8", u, true)
 	if !known {
 		t.Fatal("opus should be priceable")
 	}
@@ -88,32 +88,48 @@ func TestSavedMicroUSDAnthropic(t *testing.T) {
 	}
 }
 
+func TestSavedMicroUSDNotAttributableWhenClientCached(t *testing.T) {
+	// The client set cache_control itself, so the reads happen with or without
+	// Brevitas — Brevitas gets no credit even for a big cache read.
+	u := usage{cacheRead: 100000}
+	if got, known := savedMicroUSD(FamilyAnthropic, "claude-opus-4-8", u, false); known || got != 0 {
+		t.Errorf("client-cached read must not be credited, got %d known=%v", got, known)
+	}
+}
+
+func TestSavedMicroUSDOpenAINeverCredited(t *testing.T) {
+	// OpenAI caches automatically; that is the provider's doing, never Brevitas's.
+	if got, known := savedMicroUSD(FamilyOpenAI, "gpt-4o", usage{cacheRead: 100000}, true); known || got != 0 {
+		t.Errorf("openai automatic caching must not be credited, got %d known=%v", got, known)
+	}
+}
+
 func TestSavedMicroUSDCacheWritePenalty(t *testing.T) {
 	// A pure cache-priming call (writes, no reads) costs money now — saved must
 	// be negative, matching savings_from_usage's honest uncached-minus-actual.
 	u := usage{cacheWrite: 1000}
-	got, _ := savedMicroUSD(FamilyAnthropic, "claude-sonnet-4-6", u)
+	got, _ := savedMicroUSD(FamilyAnthropic, "claude-sonnet-4-6", u, true)
 	if got >= 0 {
 		t.Errorf("pure cache write should be negative savings, got %d", got)
 	}
 }
 
 func TestSavedMicroUSDUnknownModel(t *testing.T) {
-	if _, known := savedMicroUSD(FamilyAnthropic, "some-future-model", usage{cacheRead: 1000}); known {
+	if _, known := savedMicroUSD(FamilyAnthropic, "some-future-model", usage{cacheRead: 1000}, true); known {
 		t.Error("unknown model must not be priced")
 	}
 }
 
-func TestRecordUsageFoldsIntoSnapshot(t *testing.T) {
+func TestRecordUsageCreditsBrevitasWhenClientDidNotCache(t *testing.T) {
 	s := newStats()
-	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900, cacheWrite: 0})
+	// clientCached=false: Brevitas inserted the breakpoints, so it earns credit.
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, false)
 	snap := s.snapshot()
 	if snap.CacheReadTokens != 900 || snap.InputTokens != 100 {
 		t.Fatalf("tokens not recorded: %+v", snap)
 	}
-	// 900 read of 1000 total input = 90%.
-	if snap.CacheReadPct < 89.9 || snap.CacheReadPct > 90.1 {
-		t.Errorf("cache read pct = %.2f, want ~90", snap.CacheReadPct)
+	if snap.AttributedCacheReadTokens != 900 || snap.ClientCachedReadTokens != 0 {
+		t.Errorf("attribution wrong: attributed=%d client=%d", snap.AttributedCacheReadTokens, snap.ClientCachedReadTokens)
 	}
 	// 15 * 0.9 * 900 = 12150 micros = $0.01215.
 	if snap.CostSavedUSD < 0.01214 || snap.CostSavedUSD > 0.01216 {
@@ -124,9 +140,26 @@ func TestRecordUsageFoldsIntoSnapshot(t *testing.T) {
 	}
 }
 
+func TestRecordUsageNoCreditWhenClientCached(t *testing.T) {
+	s := newStats()
+	// clientCached=true: the reads are the client's own caching. Tokens are still
+	// measured, but Brevitas is credited $0 — this is the bug the fix addresses.
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, true)
+	snap := s.snapshot()
+	if snap.CacheReadTokens != 900 {
+		t.Errorf("raw cache reads should still be measured, got %d", snap.CacheReadTokens)
+	}
+	if snap.ClientCachedReadTokens != 900 || snap.AttributedCacheReadTokens != 0 {
+		t.Errorf("attribution wrong: attributed=%d client=%d", snap.AttributedCacheReadTokens, snap.ClientCachedReadTokens)
+	}
+	if snap.CostSavedUSD != 0 || snap.PricedResponses != 0 {
+		t.Errorf("client-cached reads must credit Brevitas $0, got $%f over %d", snap.CostSavedUSD, snap.PricedResponses)
+	}
+}
+
 func TestRecordUsageEmptyIsNoop(t *testing.T) {
 	s := newStats()
-	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{})
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{}, false)
 	if snap := s.snapshot(); snap.CacheReadTokens != 0 || snap.PricedResponses != 0 {
 		t.Errorf("empty usage should not record anything: %+v", snap)
 	}

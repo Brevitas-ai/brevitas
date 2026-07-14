@@ -215,26 +215,38 @@ func inputPricePerMillion(model string) (float64, bool) {
 	return 0, false
 }
 
-// savedMicroUSD is the honest dollars saved by caching on one call, in
-// micro-dollars (1e-6 USD), plus whether the model was priceable. It mirrors
-// brevitas-systems' savings_from_usage: uncached_cost - actual_cost. Output
-// tokens are billed identically either way and cancel out.
+// requestHasCacheControl reports whether the client already marked the request
+// for provider prompt caching (Anthropic cache_control). When it did — as
+// Claude Code and other caching-aware clients do — the resulting cache reads
+// would happen with or without Brevitas in the path, so Brevitas must NOT claim
+// the savings as its own.
+func requestHasCacheControl(body []byte) bool {
+	return bytes.Contains(body, []byte(`"cache_control"`))
+}
+
+// savedMicroUSD is the dollars Brevitas actually saved by caching on one call,
+// in micro-dollars (1e-6 USD), plus whether it was countable. It mirrors
+// brevitas-systems' savings_from_usage (uncached_cost - actual_cost) but only
+// credits caching Brevitas CAUSED — otherwise `bvx stats` would bill Brevitas
+// for the client's own caching and inflate savings by orders of magnitude.
 //
-// Anthropic: a cache read costs 0.1x input and a cache write costs 1.25x input,
+// A read counts only when: the provider is Anthropic (its caching needs
+// cache_control, which Brevitas can inject), AND the client did not already set
+// cache_control itself (attributable). OpenAI caches automatically with no
+// opt-in, so its cached tokens are the provider's doing, never Brevitas's.
+//
+// When it counts: a cache read costs 0.1x input and a cache write costs 1.25x,
 // so saved = price * (0.9*cacheRead - 0.25*cacheWrite) — negative on a pure
 // cache-priming call, repaid as later reads land.
-// OpenAI: a cached prompt token costs 0.5x, so saved = price * 0.5 * cacheRead.
-func savedMicroUSD(family Family, model string, u usage) (int64, bool) {
+func savedMicroUSD(family Family, model string, u usage, attributable bool) (int64, bool) {
+	if !attributable || family != FamilyAnthropic {
+		return 0, false
+	}
 	price, ok := inputPricePerMillion(model)
 	if !ok {
 		return 0, false
 	}
-	var factor float64
-	if family == FamilyAnthropic {
-		factor = 0.9*float64(u.cacheRead) - 0.25*float64(u.cacheWrite)
-	} else {
-		factor = 0.5 * float64(u.cacheRead)
-	}
+	factor := 0.9*float64(u.cacheRead) - 0.25*float64(u.cacheWrite)
 	// saved_usd = (price/1e6) * factor; micros = saved_usd * 1e6 = price * factor.
 	return int64(price * factor), true
 }
