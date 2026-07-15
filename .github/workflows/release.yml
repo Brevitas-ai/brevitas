@@ -9,6 +9,13 @@ on:
     tags:
       - "v*"
 
+# Collapse duplicate triggers for the same tag into a single run. Without this,
+# a tag push can fan out into many concurrent runs that race to upload the same
+# release assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
