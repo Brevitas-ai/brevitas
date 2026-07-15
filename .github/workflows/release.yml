@@ -1,9 +1,9 @@
 name: release
 
-# On every semver tag push, build prebuilt binaries for macOS/Linux
+# On every semver tag push, build prebuilt binaries for macOS/Linux/Windows
 # (pure Go, CGO disabled — no C toolchain needed) and publish them as a
-# GitHub Release. The Homebrew formula downloads these artifacts, so users
-# never compile anything.
+# GitHub Release. The Homebrew formula downloads the macOS/Linux artifacts and
+# install.ps1 downloads the Windows .zip, so users never compile anything.
 on:
   push:
     tags:
@@ -36,16 +36,22 @@ jobs:
           PKG="github.com/Brevitas-ai/brevitas/internal/version"
           LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
           mkdir -p dist
-          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             name="bvx-${VERSION}-${os}-${arch}"
             mkdir -p "dist/${name}"
+            bin="bvx"; [ "$os" = "windows" ] && bin="bvx.exe"
             GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" \
-              -o "dist/${name}/bvx" ./cmd/bvx
+              -o "dist/${name}/${bin}" ./cmd/bvx
             cp LICENSE README.md "dist/${name}/"
-            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" .
+            if [ "$os" = "windows" ]; then
+              # Windows users expect a .zip; keep contents at the archive root.
+              ( cd "dist/${name}" && zip -qr "../${name}.zip" . )
+            else
+              tar -C "dist/${name}" -czf "dist/${name}.tar.gz" .
+            fi
           done
-          ( cd dist && shasum -a 256 *.tar.gz > checksums.txt )
+          ( cd dist && shasum -a 256 *.tar.gz *.zip > checksums.txt )
           cat dist/checksums.txt
 
       - name: Publish GitHub Release
@@ -53,6 +59,7 @@ jobs:
         with:
           files: |
             dist/*.tar.gz
+            dist/*.zip
             dist/checksums.txt
           generate_release_notes: true
 

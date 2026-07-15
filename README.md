@@ -19,9 +19,21 @@ local socket (see [`docs/PROTOCOL.md`](docs/PROTOCOL.md)).
 
 ## Install
 
+macOS / Linux (Homebrew):
+
 ```sh
 brew install bvx
 ```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Brevitas-ai/brevitas/main/install.ps1 | iex
+```
+
+The PowerShell installer downloads the same prebuilt binary, verifies its
+checksum, and adds `bvx` to your PATH. Set `$env:BVX_VERSION` first to pin a
+specific version.
 
 Brevitas has two install paths:
 
