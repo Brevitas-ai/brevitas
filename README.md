@@ -137,7 +137,7 @@ Installation complete.
 | `bvx logs [-f]` | Print/follow proxy logs |
 | `bvx config [set-port\|set-upstream\|set-python]` | View/edit config |
 | `bvx login` / `logout` | Manage the stored API key |
-| `bvx update [-y]` | Check/upgrade `brevitas-systems` |
+| `bvx update [-y]` | Alert on BVX updates and check/upgrade `brevitas-systems` |
 | `bvx version` | Version info |
 
 ---

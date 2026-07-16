@@ -3,7 +3,7 @@
 
 This is the *server half* of the contract in docs/PROTOCOL.md. The Go proxy
 dials a local socket and POSTs each request to /v1/optimize; this adapter uses
-the brevitas-systems package (the 0.9.10 lossless token-efficiency model) as the
+the brevitas-systems package (the 0.9.11 token-efficiency model) as the
 brain and returns the optimized request body plus token-savings numbers.
 
 It contains NO optimization logic of its own — it only marshals request bodies
@@ -29,7 +29,7 @@ except Exception as exc:  # pragma: no cover
     sys.stderr.write(f"brevitas-systems not importable: {exc}\n")
     sys.exit(3)
 
-VERSION = getattr(brevitas, "__version__", "0.9.10")
+VERSION = getattr(brevitas, "__version__", "0.9.11")
 
 
 # The optional task-aware router is used only when BREVITAS_TEXT_COMPRESS=1.
@@ -40,10 +40,11 @@ except Exception:
     _router = None
 
 
-# ── Lossless engine (levers 2 + b9 + retrieval) ───────────────────────────────
+# ── Request engine (byte-preserving cache + quality-first retrieval) ──────────
 # The real optimization path used by the production Python proxy: one call to
 # optimize_request() applies provider-native cache_control (lever 2), multi-agent
-# shared-prefix promotion (b9), and retrieval — all lossless and guarded. We
+# shared-prefix promotion (b9), and quality-first context retrieval. Caching is
+# byte-preserving; retrieval is context-reducing and guarded by a kill switch. We
 # delegate to it for chat-shaped bodies ({"messages": [...]}); other formats
 # (Gemini contents / Responses input / legacy prompt) fall back to text
 # compression below. Import is guarded so an older brevitas-systems still runs.
@@ -60,7 +61,7 @@ except Exception:  # pragma: no cover
 # Process-lifetime state (the server runs serve_forever), mirroring proxy.py.
 _routers: dict = {}
 
-# Lossless engine is on by default; BREVITAS_LOSSLESS=0 falls back to text compression.
+# Request engine is on by default; BREVITAS_LOSSLESS=0 falls back to text compression.
 _LOSSLESS_ON = os.environ.get("BREVITAS_LOSSLESS", "1") not in ("0", "false", "no")
 # Lossy LLMLingua text compression as an EXTRA pass (prod doesn't use it). Off by default.
 _TEXT_COMPRESS_ON = os.environ.get("BREVITAS_TEXT_COMPRESS", "0") not in ("0", "false", "no")
@@ -177,7 +178,7 @@ def cache_store(provider: str, model: str, body: dict, response: dict, key_id: s
 
 
 def optimize_request_body(provider: str, body: dict, key_id: str, headers):
-    """Delegate a chat-shaped body to the lossless engine (levers 2 + b9 + retrieval).
+    """Delegate a chat-shaped body to the request engine (cache + retrieval).
 
     Returns (new_body, savings_dict). Mutates a copy in place via optimize_request.
     Falls back to (None, None) when the engine is unavailable or the body has no
@@ -202,7 +203,9 @@ def optimize_request_body(provider: str, body: dict, key_id: str, headers):
         "tokens_before": before,
         "tokens_after": after,
         "saved_pct": round(saved_pct, 2),
-        "lossy": False,
+        # Native caching is byte-preserving. Retrieval removes context and must never be
+        # reported upstream as quality=1.0 merely because it passed a retrieval score gate.
+        "lossy": strategy == "retrieve",
         "method": strategy,
     }
     return body, {"savings": savings, "applied": applied}

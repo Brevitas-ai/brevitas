@@ -80,7 +80,7 @@ works on both Windows PowerShell 5.1 and PowerShell 7.
 - To pin a specific version, set `$env:BVX_VERSION` before running:
 
   ```powershell
-  $env:BVX_VERSION = "0.1.20"
+  $env:BVX_VERSION = "0.1.22"
   irm https://raw.githubusercontent.com/Brevitas-ai/brevitas/main/install.ps1 | iex
   ```
 
@@ -113,6 +113,10 @@ This is the same as `bvx install ai`. Here's exactly what it does:
    `http://127.0.0.1:8080` (backing up the original first).
 5. **Installs and starts** the background services (proxy + `brevitas-systems`
    optimizer).
+
+BVX `0.1.22` pins `brevitas-systems==0.9.11`, including the quality-first hybrid retrieval
+runtime. The managed optimizer enables retrieval by default; set
+`BREVITAS_RETRIEVAL_ENABLED=0` before starting BVX to use byte-preserving caching only.
 6. **Runs diagnostics** and prints a summary.
 
 Example output:
@@ -206,6 +210,10 @@ Upgrade the optimization engine (`brevitas-systems`):
 bvx update
 ```
 
+This also checks the latest BVX GitHub release and prints the appropriate CLI
+upgrade command when a newer version is available. A failed network check does
+not prevent the `brevitas-systems` update from continuing.
+
 ---
 
 ## Uninstalling
@@ -245,7 +253,7 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\bvx"
 | `bvx logs` | Print (or follow, with `-f`) the proxy logs |
 | `bvx config` | Print or edit Brevitas configuration |
 | `bvx login` / `logout` | Connect through the dashboard / remove the stored key |
-| `bvx update` | Check for and upgrade the `brevitas-systems` package |
+| `bvx update` | Alert on BVX updates and check/upgrade `brevitas-systems` |
 | `bvx version` | Print version information |
 
 Run `bvx help` to see the full list at any time.

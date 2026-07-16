@@ -55,7 +55,7 @@ var commands = []command{
 	{"config", "Print or edit Brevitas configuration", (*App).cmdConfig},
 	{"login", "Connect through the Brevitas dashboard and store the key securely", (*App).cmdLogin},
 	{"logout", "Remove the stored Brevitas API key", (*App).cmdLogout},
-	{"update", "Check for and upgrade the brevitas-systems package", (*App).cmdUpdate},
+	{"update", "Check for BVX and optimization-engine updates", (*App).cmdUpdate},
 	{"serve", "Run the proxy in the foreground (used by the service manager)", (*App).cmdServe},
 	{"optimizer", "Run the brevitas-systems optimizer adapter in the foreground", (*App).cmdOptimizer},
 	{"version", "Print version information", (*App).cmdVersion},

@@ -3,7 +3,7 @@
 
 This is the *server half* of the contract in docs/PROTOCOL.md. The Go proxy
 dials a local socket and POSTs each request to /v1/optimize; this adapter uses
-the brevitas-systems package (the 0.9.10 lossless token-efficiency model) as the
+the brevitas-systems package (the 0.9.11 token-efficiency model) as the
 brain and returns the optimized request body plus token-savings numbers.
 
 It contains NO optimization logic of its own — it only marshals request bodies
@@ -29,7 +29,7 @@ except Exception as exc:  # pragma: no cover
     sys.stderr.write(f"brevitas-systems not importable: {exc}\n")
     sys.exit(3)
 
-VERSION = getattr(brevitas, "__version__", "0.9.10")
+VERSION = getattr(brevitas, "__version__", "0.9.11")
 
 
 # Prefer the task-aware compression router: it classifies the prompt (code /

@@ -64,6 +64,12 @@ func (a *App) cmdOptimizer(ctx context.Context, _ []string) error {
 	if os.Getenv("BREVITAS_CACHE_DB") == "" {
 		_ = os.Setenv("BREVITAS_CACHE_DB", filepath.Join(a.Dirs.Data, "semantic_cache.db"))
 	}
+	// BVX 0.1.22 ships the quality-first hybrid retrieval model. Enable it for the
+	// managed optimizer by default while preserving BREVITAS_RETRIEVAL_ENABLED=0
+	// as the explicit kill switch for workloads that have not passed a quality gate.
+	if os.Getenv("BREVITAS_RETRIEVAL_ENABLED") == "" {
+		_ = os.Setenv("BREVITAS_RETRIEVAL_ENABLED", "1")
+	}
 
 	a.say("Starting Brevitas optimizer via %s (%s)", python, a.Cfg.Optimizer.Address)
 	return runForeground(ctx, python, args, a.Err)
