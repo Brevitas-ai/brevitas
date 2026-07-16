@@ -21,6 +21,13 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 often defaults to TLS 1.0/1.1, which GitHub rejects.
+# Force TLS 1.2 so the downloads below work everywhere (no-op on PowerShell 7).
+try {
+    [Net.ServicePointManager]::SecurityProtocol =
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch { }
+
 $Repo = 'Brevitas-ai/brevitas'
 $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\bvx'
 
@@ -29,13 +36,24 @@ function Write-Step($msg) { Write-Host "  $msg" }
 Write-Host "Installing bvx (Brevitas)..." -ForegroundColor Cyan
 
 # --- Detect architecture -------------------------------------------------
-# Use the real OS architecture so an x64 PowerShell running under emulation on
-# an ARM64 machine still gets the native build.
-$osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-$arch = switch ("$osArch") {
-    'X64'   { 'amd64' }
-    'Arm64' { 'arm64' }
-    default { throw "bvx: unsupported architecture '$osArch' (need X64 or Arm64)" }
+# Read the environment variables Windows always sets. This works on both
+# Windows PowerShell 5.1 (.NET Framework) and PowerShell 7 — unlike
+# [RuntimeInformation]::OSArchitecture, which can come back empty on 5.1.
+# PROCESSOR_ARCHITEW6432 is set (to the native arch) when a 32-bit shell runs
+# on a 64-bit OS under WOW64, so prefer it to still pick the native build.
+# Override with $env:BVX_ARCH ("amd64" or "arm64") if detection ever misfires.
+$archRaw = $env:BVX_ARCH
+if (-not $archRaw) { $archRaw = $env:PROCESSOR_ARCHITEW6432 }
+if (-not $archRaw) { $archRaw = $env:PROCESSOR_ARCHITECTURE }
+if (-not $archRaw) {
+    try { $archRaw = "$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" } catch { }
+}
+# switch is case-insensitive, so AMD64/amd64/X64 and ARM64/arm64/Arm64 all match.
+$arch = switch ($archRaw) {
+    'AMD64' { 'amd64'; break }
+    'x64'   { 'amd64'; break }
+    'ARM64' { 'arm64'; break }
+    default { throw "bvx: unsupported or undetected architecture '$archRaw' (need AMD64/x64 or ARM64). Set `$env:BVX_ARCH to 'amd64' or 'arm64' and retry." }
 }
 
 # --- Resolve version -----------------------------------------------------
@@ -61,9 +79,17 @@ try {
     Write-Step "Downloading $asset..."
     Invoke-WebRequest "$baseUrl/$asset" -OutFile $zipPath -UseBasicParsing
 
-    # --- Verify checksum (best-effort; skips if checksums.txt is absent) --
+    # --- Verify checksum -------------------------------------------------
+    # Fetching checksums.txt is best-effort (tolerate its absence), but if we
+    # do get it, a mismatch is fatal. Keep the tolerant catch around ONLY the
+    # download so a real mismatch below still aborts the install.
+    $sums = $null
     try {
         $sums = (Invoke-WebRequest "$baseUrl/checksums.txt" -UseBasicParsing).Content
+    } catch {
+        Write-Step "checksums.txt unavailable; skipping verification."
+    }
+    if ($sums) {
         $expected = ($sums -split "`n" |
             Where-Object { $_ -match [regex]::Escape($asset) } |
             ForEach-Object { ($_ -split '\s+')[0] } | Select-Object -First 1)
@@ -74,8 +100,6 @@ try {
             }
             Write-Step "Checksum verified."
         }
-    } catch [System.Net.WebException] {
-        Write-Step "checksums.txt not found; skipping verification."
     }
 
     # --- Extract & install -----------------------------------------------
