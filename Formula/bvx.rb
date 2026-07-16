@@ -11,7 +11,7 @@
 class Bvx < Formula
   desc "Middleware installer that routes AI coding assistants through Brevitas"
   homepage "https://github.com/Brevitas-ai/brevitas"
-  version "0.1.20"
+  version "0.1.21"
   license "MIT"
 
   # Bleeding-edge source build (requires Go, only used with --HEAD).

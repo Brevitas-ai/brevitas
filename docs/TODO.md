@@ -7,6 +7,7 @@
 LLM) and can route those calls through a gateway:
 
 ```
+bvx install repo                   # choose a codebase with the directory navigator
 bvx install <repo>                 # scan + open the AI-call map (agentmap scan)
 bvx install <repo> --apply         # also route calls through Brevitas (agentmap install)
 bvx install <repo> --apply --auto  # also rewrite hardcoded provider URLs in place

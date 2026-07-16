@@ -144,10 +144,20 @@ To route every LLM call in a project through Brevitas (instead of configuring
 interactive tools):
 
 ```sh
-bvx install <repo>                 # scan + open the AI-call map
-bvx install <repo> --apply         # write a .env.agentmap you can `source`
-bvx install <repo> --apply --auto  # also rewrite hardcoded provider URLs
+bvx install repo                   # choose a project with the guided navigator
+bvx install repo --apply           # choose a project and write .env.agentmap
+bvx install ./my-project           # scan a known path + open the AI-call map
+bvx install ./my-project --apply   # write a .env.agentmap you can `source`
+bvx install ./my-project --apply --auto  # also rewrite hardcoded provider URLs
 ```
+
+The navigator offers shortcuts for the current folder, Home, Documents,
+Downloads, Desktop, and common GitHub folders, followed by an arrow-key file
+tree with colored file-type icons. Its preview pane shows a directory summary
+or syntax-highlighted lines from a selected text file. Wide terminals show the
+file tree and preview side by side; narrow terminals stack them. Press `p` to
+toggle the preview. Direct paths remain available for scripts and experienced
+users.
 
 ---
 
@@ -224,7 +234,7 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\bvx"
 
 | Command | Description |
 | --- | --- |
-| `bvx install` | Configure AI coding tools (`install ai`) or a codebase (`install <repo>`) |
+| `bvx install` | Configure AI tools (`install ai`) or choose a codebase (`install repo`) |
 | `bvx uninstall` | Restore all tool configs and remove the background service |
 | `bvx status` | Show proxy, service, and provider status |
 | `bvx stats` | Show cumulative token-savings metrics from the proxy |

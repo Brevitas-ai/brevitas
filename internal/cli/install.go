@@ -12,6 +12,7 @@ import (
 // cmdInstall dispatches between the two install paths:
 //
 //	bvx install ai            configure detected AI coding tools (Claude, Codex, ...)
+//	bvx install repo          choose a codebase with the guided directory navigator
 //	bvx install <repo>        scan a codebase and wire Brevitas into its agents
 //	bvx install               (no target) defaults to "ai" for backward compatibility
 func (a *App) cmdInstall(ctx context.Context, args []string) error {
@@ -30,6 +31,20 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 	switch {
 	case target == "" || target == "ai":
 		return a.installAITools(ctx, rest)
+	case target == "repo":
+		if navigatorHelpRequested(rest) {
+			a.printRepositoryNavigatorHelp()
+			return nil
+		}
+		repo, selected, err := a.selectRepository()
+		if err != nil {
+			return fmt.Errorf("select repository: %w", err)
+		}
+		if !selected {
+			a.say("Installation cancelled.")
+			return nil
+		}
+		return a.installCodebase(ctx, repo, rest)
 	default:
 		return a.installCodebase(ctx, target, rest)
 	}

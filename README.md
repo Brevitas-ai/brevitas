@@ -39,7 +39,8 @@ Brevitas has two install paths:
 
 ```sh
 bvx install ai            # configure interactive AI coding tools (Claude Code, Codex, ...)
-bvx install <repo>        # scan a codebase and wire Brevitas into its agents
+bvx install repo          # choose a codebase with the guided directory navigator
+bvx install <path>        # scan a known codebase path directly
 ```
 
 ### `bvx install ai`
@@ -53,7 +54,7 @@ bvx install <repo>        # scan a codebase and wire Brevitas into its agents
 
 (`bvx install` with no argument defaults to `ai`.)
 
-### `bvx install <repo>`
+### `bvx install repo` / `bvx install <path>`
 
 Maps every LLM API call in a codebase (OpenAI/Anthropic/Google SDKs + raw HTTP)
 and routes them through the Brevitas proxy so the optimizer cuts tokens on every
@@ -61,10 +62,22 @@ call. Backed by the [`agentmap-scan`](https://pypi.org/project/agentmap-scan/)
 package (`pip install agentmap-scan`):
 
 ```sh
-bvx install <repo>                 # scan + open the AI-call map
-bvx install <repo> --apply         # also route the codebase through Brevitas
-bvx install <repo> --apply --auto  # also rewrite hardcoded provider URLs
+bvx install repo                   # browse common locations and choose a folder
+bvx install repo --apply           # choose a folder and route it through Brevitas
+bvx install ./my-project           # scan a known path + open the AI-call map
+bvx install ./my-project --apply   # also route the codebase through Brevitas
+bvx install ./my-project --apply --auto  # also rewrite hardcoded provider URLs
 ```
+
+The navigator starts with shortcuts for your current folder, Home, Documents,
+Downloads, Desktop, and common GitHub folders. You can then move through a
+colorful folder and file tree with the arrow keys and confirm the project before
+scanning it. In a wide terminal, the full-screen preview pane sits beside the
+file tree and shows a directory summary or the first few safe, readable lines
+of the highlighted file with syntax coloring for common languages; press `p` to
+toggle it. Narrow terminals automatically use a stacked layout.
+
+To scan a directory literally named `repo`, pass it as `./repo`.
 
 `--apply` writes a `.env.agentmap` file; `source` it before running your agents.
 Roadmap notes in [docs/TODO.md](docs/TODO.md).
@@ -112,7 +125,7 @@ Installation complete.
 
 | Command | Description |
 | --- | --- |
-| `bvx install` | Detect, configure, and start everything |
+| `bvx install` | Configure AI tools, or use `bvx install repo` to choose a codebase |
 | `bvx uninstall [--purge]` | Restore all configs, remove the service (`--purge` also deletes the key) |
 | `bvx status` | Proxy, service, key, and provider state |
 | `bvx stats` | Cumulative token-savings metrics from the proxy |
