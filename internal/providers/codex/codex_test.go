@@ -11,7 +11,7 @@ import (
 	"github.com/Brevitas-ai/brevitas/internal/provider"
 )
 
-func TestInstallUsesBuiltInAuthenticationAndMigratesOldBlock(t *testing.T) {
+func TestInstallReusesOpenAIAuthenticationAndDisablesWebSockets(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -21,11 +21,7 @@ func TestInstallUsesBuiltInAuthenticationAndMigratesOldBlock(t *testing.T) {
 	}
 	path := filepath.Join(codexDir, "config.toml")
 	old := `# >>> brevitas (managed) >>>
-model_provider = "brevitas"
-
-[model_providers.brevitas]
-base_url = "http://127.0.0.1:8080/v1"
-env_key = "OPENAI_API_KEY"
+openai_base_url = "http://127.0.0.1:8080/v1"
 # <<< brevitas (managed) <<<
 
 model = "gpt-5"
@@ -50,10 +46,19 @@ model = "gpt-5"
 		t.Fatal(err)
 	}
 	got := string(raw)
-	if !strings.Contains(got, `openai_base_url = "http://127.0.0.1:9090/v1"`) {
-		t.Fatalf("built-in provider proxy URL missing: %s", got)
+	for _, want := range []string{
+		`model_provider = "brevitas"`,
+		`model_providers.brevitas = {`,
+		`base_url = "http://127.0.0.1:9090/v1"`,
+		`wire_api = "responses"`,
+		`requires_openai_auth = true`,
+		`supports_websockets = false`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Codex proxy setting %q missing: %s", want, got)
+		}
 	}
-	for _, forbidden := range []string{"OPENAI_API_KEY", "model_provider =", "[model_providers.brevitas]"} {
+	for _, forbidden := range []string{"openai_base_url", "OPENAI_API_KEY", "[model_providers.brevitas]"} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf("stale custom-provider setting %q remains: %s", forbidden, got)
 		}

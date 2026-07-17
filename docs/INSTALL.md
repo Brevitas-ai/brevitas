@@ -80,7 +80,7 @@ works on both Windows PowerShell 5.1 and PowerShell 7.
 - To pin a specific version, set `$env:BVX_VERSION` before running:
 
   ```powershell
-  $env:BVX_VERSION = "0.1.23"
+  $env:BVX_VERSION = "0.1.24"
   irm https://raw.githubusercontent.com/Brevitas-ai/brevitas/main/install.ps1 | iex
   ```
 
@@ -118,7 +118,7 @@ This is the same as `bvx install ai`. Here's exactly what it does:
 5. **Installs and starts** the background services (proxy + `brevitas-systems`
    optimizer).
 
-BVX `0.1.23` pins `brevitas-systems==0.9.11`, including the quality-first hybrid retrieval
+BVX `0.1.24` pins `brevitas-systems==0.9.11`, including the quality-first hybrid retrieval
 runtime. The managed optimizer enables retrieval by default; set
 `BREVITAS_RETRIEVAL_ENABLED=0` before starting BVX to use byte-preserving caching only.
 6. **Runs diagnostics** and prints a summary.
