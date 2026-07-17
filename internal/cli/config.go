@@ -84,7 +84,8 @@ func (a *App) printConfig() error {
 	if err != nil {
 		return err
 	}
-	a.say("# %s", a.Dirs.ConfigFile())
+	a.page("Configuration", "Current local BVX runtime settings.")
+	a.note("%s", a.Dirs.ConfigFile())
 	a.say("%s", string(data))
 	return nil
 }

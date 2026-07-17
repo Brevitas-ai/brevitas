@@ -43,6 +43,14 @@ bvx install repo          # choose a codebase with the guided directory navigato
 bvx install <path>        # scan a known codebase path directly
 ```
 
+Running `bvx` by itself opens the full-screen Brevitas home with an
+live preview pane for setup, status, statistics, diagnostics, and help. Select
+an action with `↑`/`↓` and launch it with `Enter`; choosing repository setup
+flows directly into the arrow-key directory navigator. The same visual system is
+used across install, login, status, stats, providers, doctor, services, config,
+updates, logs, repair, and uninstall. Colors disable automatically for pipes,
+CI, `TERM=dumb`, or `NO_COLOR`.
+
 ### `bvx install ai`
 
 1. Scan your system for supported AI tools
@@ -68,6 +76,11 @@ bvx install ./my-project           # scan a known path + open the AI-call map
 bvx install ./my-project --apply   # also route the codebase through Brevitas
 bvx install ./my-project --apply --auto  # also rewrite hardcoded provider URLs
 ```
+
+On first use, BVX opens the dashboard to create and approve a device API key,
+then stores it in the OS credential store. The selected repository name is
+linked to that key for the user and admin dashboards; absolute paths, remotes,
+source code, prompts, and responses are never sent.
 
 The navigator starts with shortcuts for your current folder, Home, Documents,
 Downloads, Desktop, and common GitHub folders. You can then move through a
@@ -125,6 +138,7 @@ Installation complete.
 
 | Command | Description |
 | --- | --- |
+| `bvx` | Open the colorful command-center home screen |
 | `bvx install` | Configure AI tools, or use `bvx install repo` to choose a codebase |
 | `bvx uninstall [--purge]` | Restore all configs, remove the service (`--purge` also deletes the key) |
 | `bvx status` | Proxy, service, key, and provider state |

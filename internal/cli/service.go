@@ -108,7 +108,7 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 		return false
 	}
 	sys = optimizer.NewSystems(python)
-	a.say("Installing brevitas-systems %s...", version.PinnedSystemsVersion)
+	a.note("Installing brevitas-systems %s…", version.PinnedSystemsVersion)
 	if err := sys.Upgrade(ctx); err != nil {
 		a.fail("optimizer install: %v", err)
 		return false
@@ -170,6 +170,8 @@ func (a *App) installServices(ctx context.Context) {
 }
 
 func (a *App) cmdStart(ctx context.Context, _ []string) error {
+	a.page("Start services", "Launch the BVX proxy and optimization engine.")
+	a.section("Services")
 	pm, err := a.proxyManager()
 	if err != nil {
 		return err
@@ -196,6 +198,8 @@ func (a *App) cmdStart(ctx context.Context, _ []string) error {
 }
 
 func (a *App) cmdStop(ctx context.Context, _ []string) error {
+	a.page("Stop services", "Stop the BVX proxy and optimization engine.")
+	a.section("Services")
 	svcs, err := a.services()
 	if err != nil {
 		return err
@@ -214,6 +218,8 @@ func (a *App) cmdStop(ctx context.Context, _ []string) error {
 }
 
 func (a *App) cmdRestart(ctx context.Context, _ []string) error {
+	a.page("Restart services", "Refresh the BVX proxy and optimization engine.")
+	a.section("Services")
 	svcs, err := a.services()
 	if err != nil {
 		return err

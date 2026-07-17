@@ -1,0 +1,84 @@
+package cli
+
+import "fmt"
+
+type helpOption struct {
+	flag        string
+	description string
+}
+
+func helpRequested(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) commandHelp(title, subtitle, usage string, options []helpOption) {
+	a.page(title, subtitle)
+	fmt.Fprintf(a.Out, "\n  %s  %s\n", a.styled(ansiPink+ansiBold, "USAGE"), a.styled(ansiCyan+ansiBold, usage))
+	if len(options) == 0 {
+		return
+	}
+	a.section("Options")
+	for _, option := range options {
+		a.command(option.flag, option.description)
+	}
+}
+
+func (a *App) printLoginHelp() {
+	a.commandHelp("Connect your account", "Authorize BVX and securely store a revocable device key.", "bvx login [flags]", []helpOption{
+		{"--api-key KEY", "Use a key directly for CI and automation"},
+		{"--no-open", "Print the authorization URL without opening a browser"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printInstallAIHelp() {
+	a.commandHelp("Install AI tools", "Detect and configure supported local AI clients.", "bvx install ai [flags]", []helpOption{
+		{"--api-key KEY", "Use a key directly for CI and automation"},
+		{"--no-service", "Configure tools without installing background services"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printCodebaseHelp(repo string) {
+	a.commandHelp("Connect a repository", "Scan and route a known codebase path.", "bvx install "+repo+" [flags]", []helpOption{
+		{"--apply", "Write routing variables to .env.agentmap"},
+		{"--auto", "Also rewrite hardcoded provider URLs"},
+		{"--api-key KEY", "Use a key directly for CI and automation"},
+		{"--no-open", "Do not open the HTML scan report"},
+		{"--target URL", "Override the gateway URL"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printProvidersHelp() {
+	a.commandHelp("AI tool compatibility", "Inspect detection and configuration support.", "bvx providers [flags]", []helpOption{
+		{"--detected", "Show only tools detected on this machine"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printLogsHelp() {
+	a.commandHelp("Proxy logs", "Read or follow the local BVX proxy log.", "bvx logs [flags]", []helpOption{
+		{"-f, --follow", "Continue following new log entries"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printUninstallHelp() {
+	a.commandHelp("Uninstall", "Restore tool configuration and remove BVX services.", "bvx uninstall [flags]", []helpOption{
+		{"--purge", "Also remove the stored Brevitas API key"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printUpdateHelp() {
+	a.commandHelp("Updates", "Check BVX and optimization-engine versions.", "bvx update [flags]", []helpOption{
+		{"-y, --yes", "Upgrade without prompting"},
+		{"-h, --help", "Show this help"},
+	})
+}

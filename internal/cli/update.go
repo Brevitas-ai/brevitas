@@ -23,6 +23,10 @@ var releaseHTTPClient = &http.Client{Timeout: 5 * time.Second}
 // brevitas-systems package. CLI upgrades remain package-manager operations;
 // brevitas-systems can be upgraded directly by this command.
 func (a *App) cmdUpdate(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printUpdateHelp()
+		return nil
+	}
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	assumeYes := fs.Bool("yes", false, "upgrade without prompting")
@@ -31,8 +35,10 @@ func (a *App) cmdUpdate(ctx context.Context, args []string) error {
 		return err
 	}
 
+	a.page("Updates", "Check BVX and the separately managed optimization engine.")
+	a.section("BVX CLI")
 	a.checkCLIUpdate(ctx)
-	a.say("")
+	a.section("Optimization engine")
 
 	sys := a.systems()
 
@@ -44,7 +50,7 @@ func (a *App) cmdUpdate(ctx context.Context, args []string) error {
 		}
 		return a.doUpgrade(ctx, sys)
 	}
-	a.say("Installed brevitas-systems: %s", current)
+	a.metric("Installed", current, ansiCyan)
 
 	pinned := version.PinnedSystemsVersion
 	if optimizer.CompareVersions(current, pinned) == 0 {
@@ -52,7 +58,8 @@ func (a *App) cmdUpdate(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	a.say("Pinned version is %s (installed %s)", pinned, current)
+	a.metric("Pinned", pinned, ansiBlue)
+	a.metric("Installed", current, ansiYellow)
 	if !a.confirm(*assumeYes, "Install pinned version now? [y/N] ") {
 		return nil
 	}
@@ -65,7 +72,7 @@ type githubRelease struct {
 }
 
 func (a *App) checkCLIUpdate(ctx context.Context) {
-	a.say("Checking for BVX CLI updates...")
+	a.note("Checking GitHub releases…")
 	latest, err := latestCLIRelease(ctx)
 	if err != nil {
 		a.warn("Could not check for a BVX CLI update: %v", err)
@@ -80,12 +87,12 @@ func (a *App) checkCLIUpdate(ctx context.Context) {
 	}
 
 	a.warn("BVX CLI update available: %s → %s", current, available)
-	a.say("Update with:")
+	a.section("Upgrade command")
 	for _, line := range cliUpgradeCommand(runtime.GOOS) {
-		a.say("  %s", line)
+		a.command(line, "Update BVX")
 	}
 	if latest.HTMLURL != "" {
-		a.say("Release: %s", latest.HTMLURL)
+		a.note("Release notes: %s", latest.HTMLURL)
 	}
 }
 
@@ -128,13 +135,13 @@ func cliUpgradeCommand(goos string) []string {
 }
 
 func (a *App) doUpgrade(ctx context.Context, sys *optimizer.Systems) error {
-	a.say("Upgrading brevitas-systems...")
+	a.note("Upgrading brevitas-systems…")
 	if err := sys.Upgrade(ctx); err != nil {
 		return err
 	}
 	v, _ := sys.Version(ctx)
 	a.ok("brevitas-systems upgraded to %s", v)
-	a.say("Restart the service to pick up the new version: bvx restart")
+	a.command("bvx restart", "Restart services to load the new engine")
 	return nil
 }
 

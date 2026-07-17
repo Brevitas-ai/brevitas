@@ -10,6 +10,10 @@ import (
 )
 
 func (a *App) cmdProviders(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printProvidersHelp()
+		return nil
+	}
 	fs := flag.NewFlagSet("providers", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	detectedOnly := fs.Bool("detected", false, "only show tools detected on this machine")
@@ -18,9 +22,11 @@ func (a *App) cmdProviders(ctx context.Context, args []string) error {
 	}
 
 	statuses := a.registry().Statuses(ctx)
+	a.page("AI tool compatibility", "Detection and configuration support on this machine.")
+	a.section("Providers")
 
 	tw := tabwriter.NewWriter(a.Out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "TOOL\tSUPPORT\tSTATE\tNOTES")
+	fmt.Fprintln(tw, "  TOOL\tSUPPORT\tSTATE\tNOTES")
 	for _, s := range statuses {
 		if *detectedOnly && !s.Detected {
 			continue
@@ -29,7 +35,7 @@ func (a *App) cmdProviders(ctx context.Context, args []string) error {
 		if len(notes) > 60 {
 			notes = notes[:57] + "…"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, s.Support, stateLabel(s), notes)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", s.Name, s.Support, stateLabel(s), notes)
 	}
 	return tw.Flush()
 }

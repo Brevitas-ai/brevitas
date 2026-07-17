@@ -19,22 +19,23 @@ type directoryShortcut struct {
 }
 
 func (a *App) printRepositoryNavigatorHelp() {
-	a.say("Choose a codebase with the guided directory navigator.\n")
-	a.say("Usage:\n  bvx install repo [flags]\n")
-	a.say("Navigator controls:")
-	a.say("  Up/Down         move through folders and files")
-	a.say("  Enter/Right     open a folder or confirm an action")
-	a.say("  Left/Backspace  move to the parent folder")
-	a.say("  p               toggle the file preview pane")
-	a.say("  h               show or hide hidden entries")
-	a.say("  s               return to starting locations")
-	a.say("  q               cancel\n")
-	a.say("Flags:")
-	a.say("  --apply         route the codebase through Brevitas (writes .env.agentmap)")
-	a.say("  --auto          with --apply, also rewrite hardcoded provider URLs")
-	a.say("  --no-open       do not open the HTML report in a browser")
-	a.say("  --target URL     gateway URL to route calls through")
-	a.say("  -h, --help      show this help")
+	a.page("Repository navigator", "Choose, inspect, scan, and connect a codebase.")
+	a.say("\nUsage:\n  %s", a.styled(ansiCyan+ansiBold, "bvx install repo [flags]"))
+	a.section("Controls")
+	a.command("↑ / ↓", "Move through folders and files")
+	a.command("Enter / →", "Open a folder or confirm an action")
+	a.command("← / Backspace", "Move to the parent folder")
+	a.command("p", "Toggle the file preview pane")
+	a.command("h", "Show or hide hidden entries")
+	a.command("s", "Return to starting locations")
+	a.command("q", "Cancel")
+	a.section("Flags")
+	a.command("--apply", "Route the codebase through Brevitas")
+	a.command("--auto", "Also rewrite hardcoded provider URLs")
+	a.command("--api-key KEY", "Use a key directly for CI")
+	a.command("--no-open", "Do not open the HTML scan report")
+	a.command("--target URL", "Override the gateway URL")
+	a.command("-h, --help", "Show this help")
 }
 
 // selectRepository uses the full-screen arrow-key browser when stdin and
@@ -146,27 +147,43 @@ func (a *App) browseDirectories(reader *bufio.Reader, shortcuts []directoryShort
 }
 
 func (a *App) printDirectoryShortcuts(shortcuts []directoryShortcut) {
-	a.say("Choose where your repository is located:\n")
+	a.page("Repository navigator", "Choose where your repository is located.")
+	a.section("Starting locations")
 	for i, shortcut := range shortcuts {
-		fmt.Fprintf(a.Out, "  %d) %-20s %s\n", i+1, shortcut.label, shortcut.path)
+		fmt.Fprintf(a.Out, "  %s  %-20s %s\n", a.styled(ansiCyan+ansiBold, strconv.Itoa(i+1)), shortcut.label, a.styled(ansiDim, shortcut.path))
 	}
-	fmt.Fprintln(a.Out, "  q) Cancel")
+	fmt.Fprintf(a.Out, "  %s  Cancel\n", a.styled(ansiRed+ansiBold, "q"))
 }
 
 func (a *App) printDirectory(current string, children []string, showHidden bool) {
-	a.say("\nBrowsing: %s\n", current)
-	fmt.Fprintln(a.Out, "  0) Select this folder")
+	a.section("Browsing")
+	a.say("  Browsing: %s", a.styled(ansiDim, current))
+	fmt.Fprintf(a.Out, "  %s  Select this folder\n", a.styled(ansiGreen+ansiBold, "0"))
 	for i, child := range children {
-		fmt.Fprintf(a.Out, "  %d) %s/\n", i+1, filepath.Base(child))
+		fmt.Fprintf(a.Out, "  %s  %s%s/%s\n", a.styled(ansiCyan+ansiBold, strconv.Itoa(i+1)), ansiBlueIf(a), filepath.Base(child), ansiResetIfApp(a))
 	}
-	fmt.Fprintln(a.Out, "  u) Up one level")
-	fmt.Fprintln(a.Out, "  s) Start locations")
+	fmt.Fprintf(a.Out, "  %s  Up one level\n", a.styled(ansiYellow+ansiBold, "u"))
+	fmt.Fprintf(a.Out, "  %s  Start locations\n", a.styled(ansiPink+ansiBold, "s"))
 	if showHidden {
-		fmt.Fprintln(a.Out, "  h) Hide hidden folders")
+		fmt.Fprintf(a.Out, "  %s  Hide hidden folders\n", a.styled(ansiPurple+ansiBold, "h"))
 	} else {
-		fmt.Fprintln(a.Out, "  h) Show hidden folders")
+		fmt.Fprintf(a.Out, "  %s  Show hidden folders\n", a.styled(ansiPurple+ansiBold, "h"))
 	}
-	fmt.Fprintln(a.Out, "  q) Cancel")
+	fmt.Fprintf(a.Out, "  %s  Cancel\n", a.styled(ansiRed+ansiBold, "q"))
+}
+
+func ansiBlueIf(a *App) string {
+	if colorEnabled(a.Out) {
+		return ansiBlue
+	}
+	return ""
+}
+
+func ansiResetIfApp(a *App) string {
+	if colorEnabled(a.Out) {
+		return ansiReset
+	}
+	return ""
 }
 
 func directoryShortcuts(cwd, home string) []directoryShortcut {
@@ -283,13 +300,4 @@ func isCancelChoice(choice string) bool {
 	default:
 		return false
 	}
-}
-
-func navigatorHelpRequested(args []string) bool {
-	for _, arg := range args {
-		if arg == "-h" || arg == "--help" {
-			return true
-		}
-	}
-	return false
 }

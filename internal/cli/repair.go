@@ -9,7 +9,8 @@ import (
 // cmdRepair re-applies configuration for every previously-enabled provider and
 // restarts the service. Useful after a tool update rewrites its own config.
 func (a *App) cmdRepair(ctx context.Context, _ []string) error {
-	a.say("Repairing Brevitas installation...\n")
+	a.page("Repair installation", "Reapply tool configuration and restart managed services.")
+	a.section("Reconfiguring tools")
 
 	if err := a.Dirs.EnsureAll(); err != nil {
 		return err
@@ -39,6 +40,6 @@ func (a *App) cmdRepair(ctx context.Context, _ []string) error {
 	// Ensure services are installed and (re)started.
 	a.installServices(ctx)
 
-	a.say("\nRepair complete.")
+	a.success("Repair complete")
 	return nil
 }

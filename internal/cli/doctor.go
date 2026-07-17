@@ -19,7 +19,7 @@ type check struct {
 }
 
 func (a *App) cmdDoctor(ctx context.Context, _ []string) error {
-	a.say("Running Brevitas diagnostics...\n")
+	a.page("Diagnostics", "Checking the complete Brevitas installation.")
 
 	var checks []check
 	add := func(name string, err error) { checks = append(checks, check{name: name, err: err}) }
@@ -93,11 +93,12 @@ func (a *App) cmdDoctor(ctx context.Context, _ []string) error {
 		}
 	}
 
-	a.say("\n%s", version.String())
+	a.section("Build")
+	a.metric("Version", version.String(), ansiCyan)
 	if failed > 0 {
 		return fmt.Errorf("%d diagnostic(s) failed", failed)
 	}
-	a.say("\nAll critical checks passed.")
+	a.success("All critical checks passed")
 	return nil
 }
 

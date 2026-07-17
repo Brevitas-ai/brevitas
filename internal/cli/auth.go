@@ -27,6 +27,11 @@ var openBrowser = func(url string) error {
 }
 
 func (a *App) cmdLogin(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printLoginHelp()
+		return nil
+	}
+	a.page("Connect your account", "Authorize BVX and store a revocable device key securely.")
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	keyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
@@ -46,13 +51,14 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 	if err != nil {
 		return fmt.Errorf("start browser login: %w", err)
 	}
-	a.say("Open this URL to connect bvx:\n  %s", auth.VerificationURIComplete)
+	a.section("Browser authorization")
+	a.command(auth.VerificationURIComplete, "Approve this device in your Brevitas dashboard")
 	if shouldOpen {
 		if err := openBrowser(auth.VerificationURIComplete); err != nil {
 			a.warn("Could not open a browser; use the URL above")
 		}
 	}
-	a.say("\nWaiting for approval...")
+	a.note("Waiting for dashboard approval…")
 
 	expires := time.Duration(auth.ExpiresIn) * time.Second
 	if expires <= 0 {

@@ -10,6 +10,10 @@ import (
 // cmdUninstall restores every managed config, removes the service, and
 // optionally purges the stored API key.
 func (a *App) cmdUninstall(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printUninstallHelp()
+		return nil
+	}
 	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	purge := fs.Bool("purge", false, "also delete the stored API key")
@@ -17,7 +21,8 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 		return err
 	}
 
-	a.say("Uninstalling Brevitas...\n")
+	a.page("Uninstall", "Restore managed configurations and remove background services.")
+	a.section("Restoring tools")
 
 	// 1. Restore provider configs from backups.
 	reg := a.registry()
@@ -33,6 +38,7 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 
 	// 2. Stop and remove the background services (proxy + optimizer).
 	if svcs, err := a.services(); err == nil {
+		a.section("Removing services")
 		for _, s := range svcs {
 			if err := s.mgr.Uninstall(ctx); err != nil {
 				a.fail("%s service: %v", s.name, err)
@@ -57,10 +63,10 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 			a.ok("API key removed from %s", a.Keyring.Backend())
 		}
 	} else {
-		a.say("\nYour API key is still stored (use --purge to remove it).")
+		a.note("Your API key is still stored. Use `bvx uninstall --purge` to remove it.")
 	}
 
-	a.say("\nUninstall complete.")
+	a.success("Uninstall complete")
 	return nil
 }
 

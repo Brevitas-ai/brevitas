@@ -9,6 +9,10 @@ import (
 )
 
 func (a *App) cmdLogs(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printLogsHelp()
+		return nil
+	}
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	follow := fs.Bool("follow", false, "follow the log (like tail -f)")
@@ -18,10 +22,13 @@ func (a *App) cmdLogs(ctx context.Context, args []string) error {
 	}
 
 	path := a.Dirs.ProxyLog()
+	if colorEnabled(a.Out) {
+		a.page("Proxy logs", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			a.say("No logs yet at %s", path)
+			a.note("No logs yet. Start BVX and send a request first.")
 			return nil
 		}
 		return err

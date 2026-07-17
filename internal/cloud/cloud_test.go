@@ -11,6 +11,7 @@ import (
 func TestDeviceAuthorizationAndContentFreeReceipt(t *testing.T) {
 	var gotKey string
 	var gotReport UsageReport
+	var gotRepo map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/device-auth/start":
@@ -23,6 +24,10 @@ func TestDeviceAuthorizationAndContentFreeReceipt(t *testing.T) {
 		case "/v1/usage":
 			gotKey = r.Header.Get("X-Brevitas-Key")
 			_ = json.NewDecoder(r.Body).Decode(&gotReport)
+			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		case "/v1/repositories":
+			gotKey = r.Header.Get("X-Brevitas-Key")
+			_ = json.NewDecoder(r.Body).Decode(&gotRepo)
 			_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		default:
 			http.NotFound(w, r)
@@ -46,5 +51,11 @@ func TestDeviceAuthorizationAndContentFreeReceipt(t *testing.T) {
 	}
 	if gotKey != key || gotReport.Project != "app" || gotReport.FreshInputTokens != 8 {
 		t.Fatalf("reported key=%q receipt=%#v", gotKey, gotReport)
+	}
+	if err := RegisterRepository(context.Background(), key, "checkout-service"); err != nil {
+		t.Fatal(err)
+	}
+	if gotKey != key || gotRepo["repo"] != "checkout-service" || gotRepo["source"] != "bvx" {
+		t.Fatalf("registered key=%q repo=%#v", gotKey, gotRepo)
 	}
 }

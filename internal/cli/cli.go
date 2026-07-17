@@ -90,7 +90,22 @@ func Main() int {
 
 // Run dispatches a single invocation and returns a process exit code.
 func (a *App) Run(ctx context.Context, args []string) int {
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+	if len(args) == 0 {
+		selected, handled, err := a.chooseHomeAction()
+		if err != nil {
+			fmt.Fprintf(a.Err, "bvx: command center: %v\n", err)
+			return 1
+		}
+		if handled {
+			if len(selected) == 0 {
+				return 0
+			}
+			return a.Run(ctx, selected)
+		}
+		a.home()
+		return 0
+	}
+	if args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
 		a.usage()
 		return 0
 	}
@@ -99,28 +114,39 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	for _, c := range commands {
 		if c.name == name {
 			if err := c.run(a, ctx, args[1:]); err != nil {
-				fmt.Fprintf(a.Err, "bvx %s: %v\n", name, err)
+				if colorEnabled(a.Err) {
+					fmt.Fprintf(a.Err, "%s%s✗ bvx %s:%s %v\n", ansiRed, ansiBold, name, ansiReset, err)
+				} else {
+					fmt.Fprintf(a.Err, "✗ bvx %s: %v\n", name, err)
+				}
 				return 1
 			}
 			return 0
 		}
 	}
 
-	fmt.Fprintf(a.Err, "bvx: unknown command %q\n\n", name)
+	if colorEnabled(a.Err) {
+		fmt.Fprintf(a.Err, "%s%s✗ Unknown command:%s %q\n\n", ansiRed, ansiBold, ansiReset, name)
+	} else {
+		fmt.Fprintf(a.Err, "✗ Unknown command: %q\n\n", name)
+	}
 	a.usage()
 	return 2
 }
 
 func (a *App) usage() {
-	fmt.Fprintf(a.Out, "Brevitas — optimize your AI coding assistants.\n\n")
-	fmt.Fprintf(a.Out, "Usage:\n  bvx <command> [flags]\n\nCommands:\n")
+	a.page("Command reference", "Optimize AI work without changing how you work.")
+	fmt.Fprintf(a.Out, "\n  %s  %s\n", a.styled(ansiPink+ansiBold, "USAGE"), a.styled(ansiCyan+ansiBold, "bvx <command> [flags]"))
+	a.section("Commands")
 	rows := make([]command, len(commands))
 	copy(rows, commands)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
 	for _, c := range rows {
-		fmt.Fprintf(a.Out, "  %-11s %s\n", c.name, c.summary)
+		a.command("bvx "+c.name, c.summary)
 	}
-	fmt.Fprintf(a.Out, "\nRun 'bvx <command> --help' for details.\n")
+	fmt.Fprintln(a.Out)
+	a.note("Run `bvx <command> --help` for command-specific options.")
+	fmt.Fprintln(a.Out)
 }
 
 // --- shared helpers -------------------------------------------------------
@@ -217,7 +243,13 @@ func disableEcho(in io.Reader) func() {
 }
 
 // ok/warn/fail print consistent status glyphs.
-func (a *App) ok(format string, args ...any)   { fmt.Fprintf(a.Out, "  ✓ "+format+"\n", args...) }
-func (a *App) warn(format string, args ...any) { fmt.Fprintf(a.Out, "  ⚠ "+format+"\n", args...) }
-func (a *App) fail(format string, args ...any) { fmt.Fprintf(a.Out, "  ✗ "+format+"\n", args...) }
-func (a *App) say(format string, args ...any)  { fmt.Fprintf(a.Out, format+"\n", args...) }
+func (a *App) ok(format string, args ...any) {
+	fmt.Fprintf(a.Out, "  %s %s\n", a.styled(ansiGreen+ansiBold, "✓"), fmt.Sprintf(format, args...))
+}
+func (a *App) warn(format string, args ...any) {
+	fmt.Fprintf(a.Out, "  %s %s\n", a.styled(ansiYellow+ansiBold, "⚠"), fmt.Sprintf(format, args...))
+}
+func (a *App) fail(format string, args ...any) {
+	fmt.Fprintf(a.Out, "  %s %s\n", a.styled(ansiRed+ansiBold, "✗"), fmt.Sprintf(format, args...))
+}
+func (a *App) say(format string, args ...any) { fmt.Fprintf(a.Out, format+"\n", args...) }

@@ -1,6 +1,5 @@
-// Package codex integrates the OpenAI Codex CLI with Brevitas by declaring a
-// custom model provider in its documented ~/.codex/config.toml and selecting
-// it as the default.
+// Package codex integrates the OpenAI Codex CLI with Brevitas by routing its
+// built-in OpenAI provider through the local proxy.
 package codex
 
 import (
@@ -28,25 +27,12 @@ func (p *Provider) Detect(ctx context.Context) bool {
 	return detect.Executable("codex") || detect.Exists(p.codexDir())
 }
 
-// Install writes a managed TOML block defining and selecting the Brevitas
-// provider. The block is placed at the top of the file so the bare
-// `model_provider` key remains valid TOML.
+// Install writes the documented built-in-provider proxy setting. Keeping the
+// built-in provider is important: Codex can continue using its persisted
+// ChatGPT or API-key login instead of requiring a shell-only environment key.
+// The block is placed at the top because openai_base_url is a top-level key.
 func (p *Provider) Install(ctx context.Context) error {
-	// Codex deprecated wire_api = "chat" in favor of "responses"
-	// (github.com/openai/codex/discussions/7782). The proxy routes the
-	// Responses API (/v1/responses) the same as chat completions.
-	// env_key tells Codex which environment variable holds the API key to send
-	// (the user's own OpenAI key). Without it Codex sends no credential and the
-	// upstream returns 401.
-	block := fmt.Sprintf(`model_provider = "brevitas"
-
-[model_providers.brevitas]
-name = "Brevitas"
-base_url = %q
-env_key = "OPENAI_API_KEY"
-wire_api = "responses"
-http_headers = { "X-Brevitas-Client" = "codex" }
-env_http_headers = { "X-Brevitas-Repo" = "PWD" }`, p.OpenAIBaseURL())
+	block := fmt.Sprintf(`openai_base_url = %q`, p.OpenAIBaseURL())
 	return p.EditManagedBlockAt(p.configPath(), block, true)
 }
 

@@ -49,54 +49,52 @@ func (a *App) cmdStats(ctx context.Context, _ []string) error {
 		return err
 	}
 
-	a.say("Brevitas savings\n")
-	fmt.Fprintf(a.Out, "  Requests proxied       %d\n", s.Requests)
-	a.say("\n  Caching (lossless — the default engine):")
-	fmt.Fprintf(a.Out, "    Native prompt caching  %d  requests with provider cache breakpoints set\n", s.NativeCache)
-	fmt.Fprintf(a.Out, "    Response-cache hits    %d  replies served with no upstream call\n", s.CacheHits)
+	a.page("Savings dashboard", "Local, content-free efficiency metrics from the BVX proxy.")
+	a.section("Traffic")
+	a.metric("Requests proxied", humanInt(s.Requests), ansiCyan)
+	a.section("Lossless caching")
+	a.metric("Native prompt caching", humanInt(s.NativeCache)+" requests", ansiBlue)
+	a.metric("Response-cache hits", humanInt(s.CacheHits)+" replies", ansiGreen)
 
 	// Provider-side caching measured off real response usage. This is ALL cache
 	// activity through the proxy — some of it (a client's own cache_control, or
 	// OpenAI's automatic caching) happens with or without Brevitas.
-	a.say("\n  Provider caching seen on responses (all tools through the proxy):")
-	fmt.Fprintf(a.Out, "    Input served from cache  %s of %s input tokens (%.1f%%)\n",
-		humanInt(s.CacheReadTokens), humanInt(s.InputTokens+s.CacheReadTokens+s.CacheWriteTokens), s.CacheReadPct)
-	fmt.Fprintf(a.Out, "    Cache writes (one-time)  %s tokens\n", humanInt(s.CacheWriteTokens))
+	a.section("Provider cache activity")
+	a.metric("Input served from cache", fmt.Sprintf("%s / %s tokens  ·  %.1f%%",
+		humanInt(s.CacheReadTokens), humanInt(s.InputTokens+s.CacheReadTokens+s.CacheWriteTokens), s.CacheReadPct), ansiCyan)
+	a.metric("One-time cache writes", humanInt(s.CacheWriteTokens)+" tokens", ansiBlue)
 
 	// Only the share Brevitas actually caused becomes a dollar figure.
-	a.say("\n  Attributable to Brevitas (it inserted the breakpoints):")
-	fmt.Fprintf(a.Out, "    Brevitas-driven reads    %s tokens\n", humanInt(s.AttributedCacheReadTokens))
-	fmt.Fprintf(a.Out, "    Client's own caching     %s tokens (billed cheap with or without Brevitas)\n",
-		humanInt(s.ClientCachedReadTokens))
+	a.section("Verified Brevitas impact")
+	a.metric("Brevitas-driven reads", humanInt(s.AttributedCacheReadTokens)+" tokens", ansiGreen)
+	a.metric("Client's own caching", humanInt(s.ClientCachedReadTokens)+" tokens", ansiGray)
 	if s.PricedResponses > 0 {
-		fmt.Fprintf(a.Out, "    Dollars saved by Brevitas  $%.4f  (across %d priced responses)\n",
-			s.CostSavedUSD, s.PricedResponses)
+		a.metric("Dollars saved", fmt.Sprintf("$%.4f  ·  %d priced responses", s.CostSavedUSD, s.PricedResponses), ansiGreen)
 	} else {
-		a.say("    Dollars saved by Brevitas  $0.0000  (no caching Brevitas caused yet)")
+		a.metric("Dollars saved", "$0.0000", ansiGray)
 	}
 
-	a.say("\n  Prompt compression (only when lossy compression is enabled):")
-	fmt.Fprintf(a.Out, "    Requests compressed    %d\n", s.Optimized)
-	fmt.Fprintf(a.Out, "    Tokens trimmed         %d of %d (%.1f%%)\n", s.TokensSaved, s.TokensBefore, s.SavedPct)
+	a.section("Prompt compression")
+	a.metric("Requests compressed", humanInt(s.Optimized), ansiMagenta)
+	a.metric("Tokens trimmed", fmt.Sprintf("%s / %s  ·  %.1f%%", humanInt(s.TokensSaved), humanInt(s.TokensBefore), s.SavedPct), ansiMagenta)
 
 	switch {
 	case s.Requests == 0:
-		a.say("\nNo requests yet. Point a tool at the proxy or send one with curl.")
+		a.section("Insight")
+		a.note("No requests yet. Point a tool at the proxy or send one with curl.")
 	case s.ClientCachedReadTokens > 0 && s.AttributedCacheReadTokens == 0:
-		a.say("\nThe cache reads above came from the client's OWN cache_control (e.g. Claude")
-		a.say("Code caches its context itself), so they'd happen without Brevitas — none of")
-		a.say("it is credited as Brevitas savings. Brevitas earns credit when it caches for")
-		a.say("a client that doesn't (a plain Anthropic app), or via response-cache hits.")
+		a.section("Insight")
+		a.note("These reads came from the client's own cache controls, so they are not credited to Brevitas.")
+		a.note("Brevitas earns credit for cache breakpoints it inserts and response-cache hits it serves.")
 	case s.NativeCache > 0 && s.CacheReadTokens == 0:
-		a.say("\nBreakpoints were set but nothing has been read back from cache yet, so")
-		a.say("they've saved nothing so far. Cache reads land once the same prefix")
-		a.say("repeats within the provider's cache window — send more turns to bank it.")
+		a.section("Insight")
+		a.note("Breakpoints are ready, but no prefix has repeated inside the provider cache window yet.")
 	case s.AttributedCacheReadTokens > 0 && s.PricedResponses == 0:
-		a.say("\nBrevitas-driven cache reads are landing, but these models aren't in the")
-		a.say("price table, so only token counts are shown. The dollars are real once priced.")
+		a.section("Insight")
+		a.note("Brevitas-driven reads are landing, but these models are not in the price table yet.")
 	case s.TokensSaved == 0:
-		a.say("\nThe default engine is lossless (it caches rather than shrinks prompts);")
-		a.say("enable lossy compression to trim tokens directly.")
+		a.section("Insight")
+		a.note("The default engine is lossless caching. Enable lossy compression to trim prompts directly.")
 	}
 	return nil
 }

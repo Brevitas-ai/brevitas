@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/Brevitas-ai/brevitas/internal/cloud"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
@@ -19,10 +20,15 @@ import (
 //	bvx install <repo> --apply         also route the codebase through Brevitas
 //	bvx install <repo> --apply --auto  also rewrite hardcoded provider URLs
 func (a *App) installCodebase(ctx context.Context, repo string, args []string) error {
+	if helpRequested(args) {
+		a.printCodebaseHelp(repo)
+		return nil
+	}
 	fs := flag.NewFlagSet("install <repo>", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	apply := fs.Bool("apply", false, "route the codebase's LLM calls through Brevitas (writes .env.agentmap)")
 	auto := fs.Bool("auto", false, "with --apply, also rewrite hardcoded provider URLs in place")
+	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
 	noOpen := fs.Bool("no-open", false, "do not open the HTML report in a browser")
 	target := fs.String("target", a.Cfg.ProxyURL(), "gateway URL to route calls through")
 	if err := fs.Parse(args); err != nil {
@@ -39,15 +45,22 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 
 	cli := a.agentmapCLI(ctx)
 	if cli == "" {
+		a.page("Connect a repository", "Scan and route a codebase through Brevitas.")
 		a.warn("The Brevitas codebase scanner is not installed.")
-		a.say("Install it, then re-run:")
-		a.say("  pip install agentmap-scan")
-		a.say("  bvx install %s", repo)
+		a.section("Install the scanner")
+		a.command("pip install agentmap-scan", "Install AgentMap")
+		a.command("bvx install "+repo, "Retry this repository")
 		return nil
 	}
+	a.page("Connect a repository", "Authorize, scan, and register this codebase safely.")
+	if err := a.ensureAPIKey(ctx, *apiKeyFlag); err != nil {
+		return err
+	}
 
-	// 1. Scan: map every AI call in the codebase (offline, no keys).
-	a.say("Scanning codebase: %s\n", abs)
+	// 1. Scan: map every AI call in the codebase locally. The Brevitas account
+	// key is used only to register the safe repository label in the dashboard.
+	a.section("Scanning repository")
+	a.note("%s", abs)
 	scanArgs := []string{"scan", abs, "--target", *target}
 	if *noOpen {
 		scanArgs = append(scanArgs, "--no-open")
@@ -55,18 +68,23 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	if err := runForeground(ctx, cli, scanArgs, a.Out); err != nil {
 		return fmt.Errorf("agentmap scan: %w", err)
 	}
+	if key, keyErr := a.apiKeyFunc()(ctx); keyErr != nil {
+		a.warn("Could not register this repository in the dashboard: %v", keyErr)
+	} else if registerErr := cloud.RegisterRepository(ctx, key, filepath.Base(abs)); registerErr != nil {
+		a.warn("Repository scanned, but dashboard registration is unavailable: %v", registerErr)
+	} else {
+		a.ok("Repository connected to your Brevitas dashboard")
+	}
 
 	if !*apply {
-		a.say("\nTo route this codebase through Brevitas: bvx install %s --apply", repo)
+		a.section("Next step")
+		a.command("bvx install "+repo+" --apply", "Route this repository through Brevitas")
 		return nil
 	}
-	if err := a.ensureAPIKey(ctx, ""); err != nil {
-		return err
-	}
-
 	// 2. Apply: write routing env vars (and optionally rewrite hardcoded URLs)
 	//    so the codebase's calls flow through the Brevitas proxy.
-	a.say("\nRouting %s through Brevitas (%s)...", repo, *target)
+	a.section("Applying routing")
+	a.note("%s → %s", repo, *target)
 	installArgs := []string{"install", abs, "--target", *target,
 		"--env-file", filepath.Join(abs, ".env.agentmap")}
 	if *auto {
@@ -75,9 +93,10 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	if err := runForeground(ctx, cli, installArgs, a.Out); err != nil {
 		return fmt.Errorf("agentmap install: %w", err)
 	}
-	a.say("\nDone. `source %s/.env.agentmap` before running your agents.", abs)
+	a.success("Repository installation complete")
+	a.command("source "+abs+"/.env.agentmap", "Load routing variables before running agents")
 	a.installServices(ctx)
-	a.say("Check the installation at any time with: bvx status")
+	a.command("bvx status", "Check the installation at any time")
 	return nil
 }
 

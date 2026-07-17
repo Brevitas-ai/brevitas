@@ -9,7 +9,8 @@ import (
 )
 
 func (a *App) cmdStatus(ctx context.Context, _ []string) error {
-	a.say("Brevitas status\n")
+	a.page("System status", "Services, credentials, optimizer, and configured tools.")
+	a.section("Runtime")
 
 	// Services (proxy + optimizer).
 	if svcs, err := a.services(); err == nil {
@@ -37,7 +38,7 @@ func (a *App) cmdStatus(ctx context.Context, _ []string) error {
 	}
 
 	// Providers.
-	a.say("\nConfigured tools:")
+	a.section("Configured tools")
 	any := false
 	for _, s := range a.registry().Statuses(ctx) {
 		if s.State == provider.StateConfigured {
@@ -46,15 +47,15 @@ func (a *App) cmdStatus(ctx context.Context, _ []string) error {
 		}
 	}
 	if !any {
-		a.say("  (none configured yet — run 'bvx install')")
+		a.note("No tools configured yet. Start with `bvx install ai`.")
 	}
 	return nil
 }
 
 func (a *App) statusLine(label, detail string, ok bool) {
-	glyph := "✗"
+	glyph := a.styled(ansiRed+ansiBold, "✗")
 	if ok {
-		glyph = "✓"
+		glyph = a.styled(ansiGreen+ansiBold, "✓")
 	}
-	fmt.Fprintf(a.Out, "  %s %-16s %s\n", glyph, label, detail)
+	fmt.Fprintf(a.Out, "  %s  %-20s %s\n", glyph, label, a.styled(ansiDim, detail))
 }

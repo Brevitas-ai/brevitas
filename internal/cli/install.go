@@ -32,7 +32,7 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 	case target == "" || target == "ai":
 		return a.installAITools(ctx, rest)
 	case target == "repo":
-		if navigatorHelpRequested(rest) {
+		if helpRequested(rest) {
 			a.printRepositoryNavigatorHelp()
 			return nil
 		}
@@ -52,6 +52,10 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 
 // installAITools runs the end-to-end AI-coding-tool installation flow.
 func (a *App) installAITools(ctx context.Context, args []string) error {
+	if helpRequested(args) {
+		a.printInstallAIHelp()
+		return nil
+	}
 	fs := flag.NewFlagSet("install ai", flag.ContinueOnError)
 	fs.SetOutput(a.Err)
 	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
@@ -65,7 +69,8 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	}
 
 	// 1. Scan.
-	a.say("Scanning system...\n")
+	a.page("Install AI tools", "Detect, connect, configure, and verify your local AI clients.")
+	a.section("Scanning this machine")
 	reg := a.registry()
 	detected := reg.Detected(ctx)
 
@@ -86,11 +91,13 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	for _, p := range unsupported {
 		a.say("      %s", p.Status(ctx).Reason)
 	}
-	a.say("\nDetected %d configurable tool(s), %d manual, %d unsupported.\n",
-		len(supported), len(manual), len(unsupported))
+	a.section("Detection summary")
+	a.metric("Configurable", fmt.Sprintf("%d tools", len(supported)), ansiGreen)
+	a.metric("Manual setup", fmt.Sprintf("%d tools", len(manual)), ansiYellow)
+	a.metric("Unsupported", fmt.Sprintf("%d tools", len(unsupported)), ansiRed)
 
 	if len(supported)+len(manual) == 0 {
-		a.say("No configurable AI tools detected. Install one, then re-run 'bvx install'.")
+		a.note("No configurable AI tools detected. Install one, then rerun `bvx install ai`.")
 		return nil
 	}
 
@@ -100,7 +107,7 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	}
 
 	// 3. Configure.
-	a.say("\nInstalling...\n")
+	a.section("Installing")
 	// Rebuild registry so providers pick up the freshly stored key.
 	reg = a.registry()
 	var configured []provider.Provider
@@ -141,7 +148,7 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	}
 
 	// 5. Diagnostics.
-	a.say("\nRunning diagnostics...\n")
+	a.section("Verifying installation")
 	for _, p := range configured {
 		if err := p.Validate(ctx); err != nil {
 			a.fail("%s: %v", p.DisplayName(), err)
@@ -150,9 +157,9 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 		}
 	}
 
-	a.say("\nInstallation complete.")
+	a.success("Installation complete")
 	if len(manual) > 0 {
-		a.say("Some tools need a one-time manual step (shown above with ⚠).")
+		a.note("Some tools need a one-time manual step (shown above with ⚠).")
 	}
 	return nil
 }
@@ -160,7 +167,7 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 // ensureAPIKey stores an explicitly supplied key or authorizes through the dashboard.
 func (a *App) ensureAPIKey(ctx context.Context, provided string) error {
 	if provided == "" && a.hasKey(ctx) {
-		a.say("Using existing Brevitas API key from %s.", a.Keyring.Backend())
+		a.ok("Using existing API key from %s", a.Keyring.Backend())
 		return nil
 	}
 	if provided != "" {

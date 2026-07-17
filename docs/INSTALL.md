@@ -80,7 +80,7 @@ works on both Windows PowerShell 5.1 and PowerShell 7.
 - To pin a specific version, set `$env:BVX_VERSION` before running:
 
   ```powershell
-  $env:BVX_VERSION = "0.1.22"
+  $env:BVX_VERSION = "0.1.23"
   irm https://raw.githubusercontent.com/Brevitas-ai/brevitas/main/install.ps1 | iex
   ```
 
@@ -92,6 +92,10 @@ bvx version
 
 This only confirms the CLI is on your `PATH` — it does **not** configure
 anything yet. That's the next step.
+
+Run `bvx` with no arguments at any time to open the full-screen arrow-key
+Brevitas home. Use `↑`/`↓` to select repository setup, AI-tool setup, status,
+stats, diagnostics, providers, login, or help, then press `Enter` to launch it.
 
 ---
 
@@ -114,7 +118,7 @@ This is the same as `bvx install ai`. Here's exactly what it does:
 5. **Installs and starts** the background services (proxy + `brevitas-systems`
    optimizer).
 
-BVX `0.1.22` pins `brevitas-systems==0.9.11`, including the quality-first hybrid retrieval
+BVX `0.1.23` pins `brevitas-systems==0.9.11`, including the quality-first hybrid retrieval
 runtime. The managed optimizer enables retrieval by default; set
 `BREVITAS_RETRIEVAL_ENABLED=0` before starting BVX to use byte-preserving caching only.
 6. **Runs diagnostics** and prints a summary.
@@ -162,6 +166,12 @@ or syntax-highlighted lines from a selected text file. Wide terminals show the
 file tree and preview side by side; narrow terminals stack them. Press `p` to
 toggle the preview. Direct paths remain available for scripts and experienced
 users.
+
+Before scanning the first repository, BVX opens the Brevitas dashboard for
+one-click authorization and stores the returned key in the OS credential store.
+It registers only the repository's basename against that key so the account and
+admin dashboards can show which keys serve which repositories. It never sends
+an absolute path, Git remote, source code, prompt, or response.
 
 ---
 

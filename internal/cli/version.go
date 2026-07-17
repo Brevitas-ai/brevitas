@@ -7,6 +7,11 @@ import (
 )
 
 func (a *App) cmdVersion(_ context.Context, _ []string) error {
-	a.say("%s", version.String())
+	if !colorEnabled(a.Out) {
+		a.say("%s", version.String())
+		return nil
+	}
+	a.page("Version", "Installed BVX build information.")
+	a.metric("Build", version.String(), ansiCyan)
 	return nil
 }

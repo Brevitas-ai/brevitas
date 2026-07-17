@@ -107,6 +107,26 @@ func ReportUsage(ctx context.Context, apiKey string, report UsageReport) error {
 	return nil
 }
 
+// RegisterRepository associates a safe repository label with the current
+// account key. Absolute paths and source content never leave the machine.
+func RegisterRepository(ctx context.Context, apiKey, repo string) error {
+	repo = strings.TrimSpace(repo)
+	if apiKey == "" || repo == "" {
+		return nil
+	}
+	status, err := post(ctx, "/v1/repositories", apiKey, map[string]string{
+		"repo":   repo,
+		"source": "bvx",
+	}, nil)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("repository endpoint returned status %d", status)
+	}
+	return nil
+}
+
 func post(ctx context.Context, path, apiKey string, input, output any) (int, error) {
 	payload, err := json.Marshal(input)
 	if err != nil {
