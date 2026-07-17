@@ -75,6 +75,9 @@ type UsageReport struct {
 	FreshInputTokens     int64    `json:"fresh_input_tokens"`
 	CachedInputTokens    int64    `json:"cached_input_tokens"`
 	CacheWriteTokens     int64    `json:"cache_write_tokens"`
+	CacheWrite5mTokens   int64    `json:"cache_write_5m_tokens"`
+	CacheWrite1hTokens   int64    `json:"cache_write_1h_tokens"`
+	CacheAttributable    bool     `json:"cache_attributable"`
 	OutputTokens         int64    `json:"output_tokens"`
 	QualityScore         *float64 `json:"quality_score,omitempty"`
 	RequestID            string   `json:"request_id"`

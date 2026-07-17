@@ -15,9 +15,37 @@ type usage struct {
 	outputTokens int64
 	cacheRead    int64
 	cacheWrite   int64
+	cacheWrite5m int64
+	cacheWrite1h int64
 }
 
 func (u usage) empty() bool { return u == usage{} }
+
+func (u usage) optimizerReceipt(family Family) json.RawMessage {
+	var value any
+	if family == FamilyAnthropic {
+		value = map[string]any{
+			"input_tokens":                u.inputTokens,
+			"output_tokens":               u.outputTokens,
+			"cache_read_input_tokens":     u.cacheRead,
+			"cache_creation_input_tokens": u.cacheWrite,
+			"cache_creation": map[string]any{
+				"ephemeral_5m_input_tokens": u.cacheWrite5m,
+				"ephemeral_1h_input_tokens": u.cacheWrite1h,
+			},
+		}
+	} else {
+		value = map[string]any{
+			"prompt_tokens":     u.inputTokens + u.cacheRead,
+			"completion_tokens": u.outputTokens,
+			"prompt_tokens_details": map[string]any{
+				"cached_tokens": u.cacheRead,
+			},
+		}
+	}
+	payload, _ := json.Marshal(value)
+	return payload
+}
 
 // rawUsage is the union of the Anthropic and OpenAI usage shapes. Both providers
 // nest it under "usage" (Anthropic also under "message.usage" in streaming
@@ -28,10 +56,16 @@ type rawUsage struct {
 	OutputTokens             int64 `json:"output_tokens"`
 	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheCreation            struct {
+		Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens"`
+		Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
 	// OpenAI-compatible
-	PromptTokens        int64 `json:"prompt_tokens"`
-	CompletionTokens    int64 `json:"completion_tokens"`
-	PromptTokensDetails struct {
+	PromptTokens          int64 `json:"prompt_tokens"`
+	CompletionTokens      int64 `json:"completion_tokens"`
+	PromptCacheHitTokens  int64 `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens int64 `json:"prompt_cache_miss_tokens"`
+	PromptTokensDetails   struct {
 		CachedTokens int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 	// OpenAI Responses API
@@ -56,11 +90,23 @@ func (r *rawUsage) merge(o rawUsage) {
 	if o.CacheCreationInputTokens != 0 {
 		r.CacheCreationInputTokens = o.CacheCreationInputTokens
 	}
+	if o.CacheCreation.Ephemeral5mInputTokens != 0 {
+		r.CacheCreation.Ephemeral5mInputTokens = o.CacheCreation.Ephemeral5mInputTokens
+	}
+	if o.CacheCreation.Ephemeral1hInputTokens != 0 {
+		r.CacheCreation.Ephemeral1hInputTokens = o.CacheCreation.Ephemeral1hInputTokens
+	}
 	if o.PromptTokens != 0 {
 		r.PromptTokens = o.PromptTokens
 	}
 	if o.CompletionTokens != 0 {
 		r.CompletionTokens = o.CompletionTokens
+	}
+	if o.PromptCacheHitTokens != 0 {
+		r.PromptCacheHitTokens = o.PromptCacheHitTokens
+	}
+	if o.PromptCacheMissTokens != 0 {
+		r.PromptCacheMissTokens = o.PromptCacheMissTokens
 	}
 	if o.PromptTokensDetails.CachedTokens != 0 {
 		r.PromptTokensDetails.CachedTokens = o.PromptTokensDetails.CachedTokens
@@ -79,11 +125,19 @@ func (r rawUsage) normalize(family Family) usage {
 			outputTokens: r.OutputTokens,
 			cacheRead:    r.CacheReadInputTokens,
 			cacheWrite:   r.CacheCreationInputTokens,
+			cacheWrite5m: r.CacheCreation.Ephemeral5mInputTokens,
+			cacheWrite1h: r.CacheCreation.Ephemeral1hInputTokens,
 		}
 	}
 	prompt := r.PromptTokens
 	output := r.CompletionTokens
 	cached := r.PromptTokensDetails.CachedTokens
+	if cached == 0 {
+		cached = r.PromptCacheHitTokens
+	}
+	if prompt == 0 && (r.PromptCacheHitTokens != 0 || r.PromptCacheMissTokens != 0) {
+		prompt = r.PromptCacheHitTokens + r.PromptCacheMissTokens
+	}
 	if prompt == 0 && (r.InputTokens != 0 || r.OutputTokens != 0 || r.InputTokensDetails.CachedTokens != 0) {
 		prompt = r.InputTokens
 		output = r.OutputTokens
@@ -197,6 +251,9 @@ func inputPricePerMillion(model string) (float64, bool) {
 		sub   string
 		price float64
 	}{
+		{"claude-opus-4-8", 5.0},
+		{"claude-opus-4-7", 5.0},
+		{"claude-opus-4-6", 5.0},
 		{"claude-opus", 15.0},
 		{"claude-sonnet", 3.0},
 		{"claude-3-5-haiku", 0.80},
@@ -205,8 +262,10 @@ func inputPricePerMillion(model string) (float64, bool) {
 		{"gpt-4o-mini", 0.15},
 		{"gpt-4o", 2.50},
 		{"gpt-4.1-mini", 0.40},
+		{"gpt-4.1-nano", 0.10},
 		{"gpt-4.1", 2.00},
 		{"o3-mini", 1.10},
+		{"o4-mini", 1.10},
 	} {
 		if strings.Contains(m, e.sub) {
 			return e.price, true
@@ -235,9 +294,9 @@ func requestHasCacheControl(body []byte) bool {
 // cache_control itself (attributable). OpenAI caches automatically with no
 // opt-in, so its cached tokens are the provider's doing, never Brevitas's.
 //
-// When it counts: a cache read costs 0.1x input and a cache write costs 1.25x,
-// so saved = price * (0.9*cacheRead - 0.25*cacheWrite) — negative on a pure
-// cache-priming call, repaid as later reads land.
+// When it counts: a cache read costs 0.1x input, a 5m write costs 1.25x, and a
+// 1h write costs 2x. Savings are therefore negative on a pure cache-priming
+// call, then repaid only if later attributable reads land.
 func savedMicroUSD(family Family, model string, u usage, attributable bool) (int64, bool) {
 	if !attributable || family != FamilyAnthropic {
 		return 0, false
@@ -246,7 +305,17 @@ func savedMicroUSD(family Family, model string, u usage, attributable bool) (int
 	if !ok {
 		return 0, false
 	}
-	factor := 0.9*float64(u.cacheRead) - 0.25*float64(u.cacheWrite)
+	// Anthropic's aggregate cache_creation_input_tokens includes both tiers.
+	// Price the reported breakdown exactly: 5m writes add a 0.25x premium and
+	// 1h writes add a 1.0x premium. Any unclassified remainder uses 5m pricing.
+	write5m := u.cacheWrite5m
+	write1h := u.cacheWrite1h
+	tiered := write5m + write1h
+	if tiered > u.cacheWrite {
+		write5m, write1h, tiered = 0, 0, 0
+	}
+	unspecified := u.cacheWrite - tiered
+	factor := 0.9*float64(u.cacheRead) - 0.25*float64(unspecified+write5m) - float64(write1h)
 	// saved_usd = (price/1e6) * factor; micros = saved_usd * 1e6 = price * factor.
 	return int64(price * factor), true
 }

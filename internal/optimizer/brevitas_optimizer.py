@@ -50,10 +50,12 @@ except Exception:
 # compression below. Import is guarded so an older brevitas-systems still runs.
 try:
     from token_efficiency_model.lossless.engine import optimize_request as _optimize_request
+    from token_efficiency_model.lossless.engine import record_usage as _record_engine_usage
     from token_efficiency_model.lossless.router import BrevitasRouter as _BrevitasRouter
     from token_efficiency_model.lossless.provider_cache import count_tokens as _count_tokens
 except Exception:  # pragma: no cover
     _optimize_request = None
+    _record_engine_usage = None
     _BrevitasRouter = None
     _count_tokens = None
 
@@ -385,6 +387,20 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 cache_store(req.get("provider", ""), req.get("model", ""),
                             req.get("body"), req.get("response"), req.get("key_id", ""))
+                response = req.get("response") or {}
+                usage = req.get("usage")
+                if not isinstance(usage, dict):
+                    usage = response.get("usage") if isinstance(response, dict) else None
+                if _record_engine_usage is not None and isinstance(usage, dict):
+                    provider = req.get("provider", "")
+                    key_id = req.get("key_id", "")
+                    headers = req.get("headers", {})
+                    pipeline, agent, _run = _labels_from_headers(headers)
+                    session_id = f"{key_id or 'local'}:{agent or pipeline or 'default'}"
+                    _record_engine_usage(
+                        usage, provider, _router_for(key_id or "local", provider), session_id,
+                        pipeline=pipeline, model=req.get("model", ""),
+                    )
             except Exception:
                 pass
             self._send(200, {"ok": True})

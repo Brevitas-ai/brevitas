@@ -13,7 +13,8 @@ import (
 )
 
 func newCloudReport(r *http.Request, family Family, model string,
-	savings *optimizer.Savings, applied []string, stream bool) cloud.UsageReport {
+	savings *optimizer.Savings, applied []string, stream bool,
+	cacheAttributable bool) cloud.UsageReport {
 	repo := repoLabel(first(label(r, "X-Brevitas-Repo"), os.Getenv("BREVITAS_REPO")))
 	project := repoLabel(first(label(r, "X-Brevitas-Project"), os.Getenv("BREVITAS_PROJECT")))
 	if repo == "" {
@@ -54,7 +55,7 @@ func newCloudReport(r *http.Request, family Family, model string,
 		RequestID: requestID(r), Strategy: strategy, Project: project,
 		Environment: defaultLabel(first(label(r, "X-Brevitas-Environment"), labelValue(os.Getenv("BREVITAS_ENVIRONMENT"))), "local"),
 		Source:      source, Repo: repo, Client: client, Gateway: "bvx",
-		ReceiptSource: "proxy", IsStream: stream,
+		ReceiptSource: "proxy", IsStream: stream, CacheAttributable: cacheAttributable,
 	}
 	if savings != nil {
 		report.BaselineTokens = int64(savings.TokensBefore)
@@ -72,13 +73,21 @@ func newCloudReport(r *http.Request, family Family, model string,
 
 func reportWithUsage(report cloud.UsageReport, usage usage) cloud.UsageReport {
 	input := usage.inputTokens + usage.cacheRead + usage.cacheWrite
-	if report.BaselineTokens == 0 {
-		report.BaselineTokens = input
-		report.CompressedTokens = input
+	// Provider usage is authoritative for the request actually billed, including
+	// tools, system prompts, and provider-tokenizer overhead. Preserve only the
+	// optimizer's before/after delta, whose local-tokenizer bias cancels, then
+	// anchor both sides of the comparison to the same provider receipt.
+	delta := report.BaselineTokens - report.CompressedTokens
+	report.CompressedTokens = input
+	report.BaselineTokens = input + delta
+	if report.BaselineTokens < 0 {
+		report.BaselineTokens = 0
 	}
 	report.FreshInputTokens = usage.inputTokens
 	report.CachedInputTokens = usage.cacheRead
 	report.CacheWriteTokens = usage.cacheWrite
+	report.CacheWrite5mTokens = usage.cacheWrite5m
+	report.CacheWrite1hTokens = usage.cacheWrite1h
 	report.OutputTokens = usage.outputTokens
 	baselineOutput := usage.outputTokens
 	report.BaselineOutputTokens = &baselineOutput
@@ -88,7 +97,7 @@ func reportWithUsage(report cloud.UsageReport, usage usage) cloud.UsageReport {
 
 func cacheHitCloudReport(r *http.Request, family Family, model string, cached []byte) cloud.UsageReport {
 	usage := extractUsage(family, cached)
-	report := newCloudReport(r, family, model, nil, []string{"exact_cache"}, false)
+	report := newCloudReport(r, family, model, nil, []string{"exact_cache"}, false, true)
 	report.BaselineTokens = usage.inputTokens + usage.cacheRead + usage.cacheWrite
 	report.CompressedTokens = 0
 	baselineOutput := usage.outputTokens

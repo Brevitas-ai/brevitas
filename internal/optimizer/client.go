@@ -71,8 +71,9 @@ type RecordRequest struct {
 	Model    string            `json:"model"`
 	KeyID    string            `json:"key_id,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
-	Body     json.RawMessage   `json:"body"`     // the ORIGINAL request body
-	Response json.RawMessage   `json:"response"` // the provider's response JSON
+	Body     json.RawMessage   `json:"body"`               // the ORIGINAL request body
+	Response json.RawMessage   `json:"response,omitempty"` // complete provider response, when buffered
+	Usage    json.RawMessage   `json:"usage,omitempty"`    // content-free receipt for streams
 }
 
 // Savings summarizes the token reduction brevitas-systems achieved.

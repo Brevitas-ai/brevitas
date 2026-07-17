@@ -117,9 +117,23 @@ func TestProxyReportsTenantScopedCloudReceipt(t *testing.T) {
 func TestCloudReceiptUsesSafeRepoOverride(t *testing.T) {
 	t.Setenv("BREVITAS_REPO", "/private/customer/checkout-service")
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	report := newCloudReport(req, FamilyOpenAI, "gpt-4o-mini", nil, nil, false)
+	report := newCloudReport(req, FamilyOpenAI, "gpt-4o-mini", nil, nil, false, false)
 	if report.Repo != "checkout-service" || report.Project != "checkout-service" {
 		t.Fatalf("unsafe repo labels: %#v", report)
+	}
+}
+
+func TestCloudReceiptAlignsBaselineToProviderUsage(t *testing.T) {
+	// The local optimizer counted only the changed message text (100 -> 80),
+	// while the provider receipt also includes tools/system/cache categories.
+	// Preserve the 20-token delta but anchor both totals to the 500-token receipt.
+	report := cloud.UsageReport{BaselineTokens: 100, CompressedTokens: 80}
+	got := reportWithUsage(report, usage{inputTokens: 300, cacheRead: 150, cacheWrite: 50})
+	if got.CompressedTokens != 500 || got.BaselineTokens != 520 {
+		t.Fatalf("unaligned receipt: %#v", got)
+	}
+	if got.FreshInputTokens != 300 || got.CachedInputTokens != 150 || got.CacheWriteTokens != 50 {
+		t.Fatalf("missing receipt categories: %#v", got)
 	}
 }
 

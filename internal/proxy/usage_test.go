@@ -1,15 +1,27 @@
 package proxy
 
 import (
+	"encoding/json"
 	"testing"
 )
 
 func TestExtractUsageAnthropic(t *testing.T) {
 	body := []byte(`{"usage":{"input_tokens":100,"output_tokens":40,` +
-		`"cache_read_input_tokens":900,"cache_creation_input_tokens":50}}`)
+		`"cache_read_input_tokens":900,"cache_creation_input_tokens":50,` +
+		`"cache_creation":{"ephemeral_5m_input_tokens":30,"ephemeral_1h_input_tokens":20}}}`)
 	u := extractUsage(FamilyAnthropic, body)
-	if u.inputTokens != 100 || u.outputTokens != 40 || u.cacheRead != 900 || u.cacheWrite != 50 {
+	if u.inputTokens != 100 || u.outputTokens != 40 || u.cacheRead != 900 || u.cacheWrite != 50 ||
+		u.cacheWrite5m != 30 || u.cacheWrite1h != 20 {
 		t.Fatalf("anthropic usage = %+v", u)
+	}
+}
+
+func TestExtractUsageDeepSeekCacheHitMissFields(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_cache_hit_tokens":800,"prompt_cache_miss_tokens":200,` +
+		`"completion_tokens":30}}`)
+	u := extractUsage(FamilyOpenAI, body)
+	if u.inputTokens != 200 || u.cacheRead != 800 || u.outputTokens != 30 {
+		t.Fatalf("deepseek usage = %+v", u)
 	}
 }
 
@@ -76,15 +88,27 @@ data: {"type":"response.completed","response":{"usage":{"input_tokens":1200,"out
 	}
 }
 
+func TestOptimizerReceiptPreservesStreamingCacheCategories(t *testing.T) {
+	want := usage{inputTokens: 10, outputTokens: 7, cacheRead: 20, cacheWrite: 30,
+		cacheWrite5m: 12, cacheWrite1h: 18}
+	var raw rawUsage
+	if err := json.Unmarshal(want.optimizerReceipt(FamilyAnthropic), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := raw.normalize(FamilyAnthropic); got != want {
+		t.Fatalf("optimizer receipt = %+v, want %+v", got, want)
+	}
+}
+
 func TestSavedMicroUSDAnthropicAttributable(t *testing.T) {
-	// Opus input is $15/1M. saved = 15 * (0.9*1000 - 0.25*100) = 15 * 875 = 13125 micros.
+	// Opus 4.8 input is $5/1M. saved = 5 * (0.9*1000 - 0.25*100) = 5 * 875 = 4375 micros.
 	u := usage{cacheRead: 1000, cacheWrite: 100}
 	got, known := savedMicroUSD(FamilyAnthropic, "claude-opus-4-8", u, true)
 	if !known {
 		t.Fatal("opus should be priceable")
 	}
-	if got != 13125 {
-		t.Errorf("saved = %d micros, want 13125", got)
+	if got != 4375 {
+		t.Errorf("saved = %d micros, want 4375", got)
 	}
 }
 
@@ -114,6 +138,16 @@ func TestSavedMicroUSDCacheWritePenalty(t *testing.T) {
 	}
 }
 
+func TestSavedMicroUSDPricesOneHourWritePremium(t *testing.T) {
+	// Sonnet input is $3/1M; a 1h write costs 2x, so the premium is
+	// 3 * 1000 = 3000 micro-dollars rather than the 5m tier's 750.
+	u := usage{cacheWrite: 1000, cacheWrite1h: 1000}
+	got, _ := savedMicroUSD(FamilyAnthropic, "claude-sonnet-4-6", u, true)
+	if got != -3000 {
+		t.Errorf("1h write savings = %d micros, want -3000", got)
+	}
+}
+
 func TestSavedMicroUSDUnknownModel(t *testing.T) {
 	if _, known := savedMicroUSD(FamilyAnthropic, "some-future-model", usage{cacheRead: 1000}, true); known {
 		t.Error("unknown model must not be priced")
@@ -131,9 +165,9 @@ func TestRecordUsageCreditsBrevitasWhenClientDidNotCache(t *testing.T) {
 	if snap.AttributedCacheReadTokens != 900 || snap.ClientCachedReadTokens != 0 {
 		t.Errorf("attribution wrong: attributed=%d client=%d", snap.AttributedCacheReadTokens, snap.ClientCachedReadTokens)
 	}
-	// 15 * 0.9 * 900 = 12150 micros = $0.01215.
-	if snap.CostSavedUSD < 0.01214 || snap.CostSavedUSD > 0.01216 {
-		t.Errorf("cost saved = %f, want ~0.01215", snap.CostSavedUSD)
+	// 5 * 0.9 * 900 = 4050 micros = $0.00405.
+	if snap.CostSavedUSD < 0.00404 || snap.CostSavedUSD > 0.00406 {
+		t.Errorf("cost saved = %f, want ~0.00405", snap.CostSavedUSD)
 	}
 	if snap.PricedResponses != 1 {
 		t.Errorf("priced responses = %d, want 1", snap.PricedResponses)

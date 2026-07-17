@@ -155,7 +155,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// Non-stream 200s are handed back to the sidecar to populate the response
 	// cache (it applies its own cacheable() gate) and report usage. Streams and
 	// errors are streamed straight through and never cached.
-	report := newCloudReport(r, rt.Family, meta.Model, requestSavings, applied, meta.Stream)
+	cacheAttributable := rt.Family == FamilyAnthropic && !clientCached && contains(applied, "native_cache")
+	report := newCloudReport(r, rt.Family, meta.Model, requestSavings, applied, meta.Stream,
+		cacheAttributable)
 	if !meta.Stream && resp.StatusCode == http.StatusOK {
 		var record *optimizer.RecordRequest
 		if s.opt != nil {
@@ -182,6 +184,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			usage := sniff.result()
 			s.stats.recordUsage(rt.Family, meta.Model, usage, clientCached)
 			s.reportCloud(apiKey, reportWithUsage(report, usage))
+			if s.opt != nil && !usage.empty() {
+				record := &optimizer.RecordRequest{
+					Provider: string(rt.Family), Model: meta.Model,
+					KeyID: optimizerKeyID(apiKey), Headers: flattenHeaders(r.Header),
+					Body: json.RawMessage(body), Usage: usage.optimizerReceipt(rt.Family),
+				}
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := s.opt.Record(ctx, record); err != nil {
+						s.log.Debug("optimizer usage feedback failed", "err", err)
+					}
+				}()
+			}
 		}
 	}
 	s.log.Info("proxied",
