@@ -12,6 +12,7 @@ import (
 
 // cmdStats prints cumulative token-savings metrics from the running proxy.
 func (a *App) cmdStats(ctx context.Context, _ []string) error {
+	a.page("Savings dashboard", "Local, content-free efficiency metrics from the BVX proxy.")
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -19,6 +20,8 @@ func (a *App) cmdStats(ctx context.Context, _ []string) error {
 	if err != nil {
 		return err
 	}
+	loading := a.startLoading("Loading savings metrics…")
+	defer loading.Stop()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("proxy not reachable (is it running?): %w", err)
@@ -48,8 +51,8 @@ func (a *App) cmdStats(ctx context.Context, _ []string) error {
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
 		return err
 	}
+	loading.Stop()
 
-	a.page("Savings dashboard", "Local, content-free efficiency metrics from the BVX proxy.")
 	a.section("Traffic")
 	a.metric("Requests proxied", humanInt(s.Requests), ansiCyan)
 	a.section("Lossless caching")

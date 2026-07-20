@@ -41,6 +41,9 @@ func (a *App) cmdInstall(ctx context.Context, args []string) error {
 			return fmt.Errorf("select repository: %w", err)
 		}
 		if !selected {
+			if a.dashboardActive {
+				a.returnHomeRequested = true
+			}
 			a.say("Installation cancelled.")
 			return nil
 		}
@@ -68,11 +71,21 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 		return fmt.Errorf("prepare directories: %w", err)
 	}
 
-	// 1. Scan.
 	a.page("Install AI tools", "Detect, connect, configure, and verify your local AI clients.")
+
+	// 1. Authenticate first so a fresh install always guides the user through
+	// login, even when no supported AI clients have been installed yet.
+	a.section("Connecting your account")
+	if err := a.ensureAPIKey(ctx, *apiKeyFlag); err != nil {
+		return err
+	}
+
+	// 2. Scan.
 	a.section("Scanning this machine")
 	reg := a.registry()
+	loading := a.startLoading("Detecting installed AI tools…")
 	detected := reg.Detected(ctx)
+	loading.Stop()
 
 	var supported, manual, unsupported []provider.Provider
 	for _, p := range detected {
@@ -101,11 +114,6 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	// 2. API key.
-	if err := a.ensureAPIKey(ctx, *apiKeyFlag); err != nil {
-		return err
-	}
-
 	// 3. Configure.
 	a.section("Installing")
 	// Rebuild registry so providers pick up the freshly stored key.
@@ -113,7 +121,9 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	var configured []provider.Provider
 	for _, name := range providerNames(supported) {
 		p := reg.Get(name)
-		if err := p.Install(ctx); err != nil {
+		if err := a.withLoading("Configuring "+p.DisplayName()+"…", func() error {
+			return p.Install(ctx)
+		}); err != nil {
 			a.fail("%s: %v", p.DisplayName(), err)
 			continue
 		}
@@ -125,7 +135,9 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	// Manual-step providers: surface instructions, do not fail.
 	for _, name := range providerNames(manual) {
 		p := reg.Get(name)
-		err := p.Install(ctx)
+		err := a.withLoading("Checking "+p.DisplayName()+" setup…", func() error {
+			return p.Install(ctx)
+		})
 		if m, ok := provider.IsManualStep(err); ok {
 			a.warn("%s: %s", p.DisplayName(), m.Instructions)
 			continue
@@ -150,7 +162,9 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 	// 5. Diagnostics.
 	a.section("Verifying installation")
 	for _, p := range configured {
-		if err := p.Validate(ctx); err != nil {
+		if err := a.withLoading("Verifying "+p.DisplayName()+"…", func() error {
+			return p.Validate(ctx)
+		}); err != nil {
 			a.fail("%s: %v", p.DisplayName(), err)
 		} else {
 			a.ok("%s", p.DisplayName())
@@ -166,9 +180,14 @@ func (a *App) installAITools(ctx context.Context, args []string) error {
 
 // ensureAPIKey stores an explicitly supplied key or authorizes through the dashboard.
 func (a *App) ensureAPIKey(ctx context.Context, provided string) error {
-	if provided == "" && a.hasKey(ctx) {
-		a.ok("Using existing API key from %s", a.Keyring.Backend())
-		return nil
+	if provided == "" {
+		loading := a.startLoading("Checking for an existing API key…")
+		hasKey := a.hasKey(ctx)
+		loading.Stop()
+		if hasKey {
+			a.ok("Using existing API key from %s", a.Keyring.Backend())
+			return nil
+		}
 	}
 	if provided != "" {
 		return a.storeAPIKey(ctx, provided)

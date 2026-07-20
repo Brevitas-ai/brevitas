@@ -24,6 +24,8 @@ const (
 	maxCustomerExportBytes = 64 << 20
 	maxCustomerRows        = 1_000_000
 	customerImportBatch    = 1000
+	onboardingGuideURL     = "https://github.com/Brevitas-ai/brevitas#onboard-an-existing-customer-database"
+	dashboardDemoURL       = "https://brevitassystems.com/dashboard"
 )
 
 var customerIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
@@ -66,12 +68,36 @@ func (a *App) cmdOnboard(ctx context.Context, args []string) error {
 	noOpen := fs.Bool("no-open", false, "do not open the AgentMap HTML report")
 	target := fs.String("target", a.Cfg.ProxyURL(), "gateway URL to route calls through")
 	environment := fs.String("environment", envOr("BREVITAS_ENVIRONMENT", "production"), "deployment environment")
+	guide := fs.Bool("guide", false, "open the onboarding guide in a browser")
+	demo := fs.Bool("demo", false, "open the Brevitas dashboard demo in a browser")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 1 {
 		return errors.New("provide at most one codebase path")
 	}
+	positionalAction := ""
+	if fs.NArg() == 1 {
+		positionalAction = strings.ToLower(strings.TrimSpace(fs.Arg(0)))
+	}
+	if *guide || positionalAction == "guide" || positionalAction == "docs" {
+		a.openOnboardingResource("Onboarding guide", onboardingGuideURL)
+		return nil
+	}
+	if *demo || positionalAction == "demo" || positionalAction == "dashboard" {
+		a.openOnboardingResource("Dashboard demo", dashboardDemoURL)
+		return nil
+	}
+
+	a.page("Onboard a company backend", "Connect a backend and safely preview existing customer IDs.")
+	a.section("Guided setup")
+	a.say("  1. Choose the backend project folder.")
+	a.say("  2. Choose a CSV or JSON export containing stable customer IDs.")
+	a.say("  3. Review the preview before anything changes.")
+	a.note("Nothing is imported or rewritten unless you rerun with --apply.")
+	a.command("bvx onboard guide", "Open the step-by-step setup guide")
+	a.command("bvx onboard demo", "Open the Brevitas dashboard demo")
+
 	reader := bufio.NewReader(a.In)
 	ask := func(label string) (string, error) {
 		fmt.Fprint(a.Out, label)
@@ -87,31 +113,83 @@ func (a *App) cmdOnboard(ctx context.Context, args []string) error {
 		repo = fs.Arg(0)
 	}
 	if !*skipScan && repo == "" {
-		value, err := ask("Company backend codebase path: ")
-		if err != nil {
-			return fmt.Errorf("read codebase path: %w", err)
+		in, inOK := a.In.(*os.File)
+		out, outOK := a.Out.(*os.File)
+		if inOK && outOK && canUseArrowNavigator(in, out) {
+			selectedRepo, selected, selectErr := a.selectRepository()
+			if selectErr != nil {
+				return fmt.Errorf("choose backend project: %w", selectErr)
+			}
+			if !selected {
+				return a.cancelOnboarding()
+			}
+			repo = selectedRepo
+		} else {
+			value, err := ask("Backend project folder (example: ./my-api; q cancels): ")
+			if err != nil {
+				return fmt.Errorf("read backend project folder: %w", err)
+			}
+			if label, url, ok := onboardingResourceForInput(value); ok {
+				a.openOnboardingResource(label, url)
+				return nil
+			}
+			if isCancelChoice(value) {
+				return a.cancelOnboarding()
+			}
+			repo = value
 		}
-		repo = value
 	}
 	if !*skipScan && repo == "" {
 		return errors.New("a codebase path is required unless --skip-scan is used")
 	}
 	if *source == "" {
-		value, err := ask("Past-customer database export (CSV, JSON, or JSONL): ")
+		if a.dashboardScreenActive {
+			renderHomeActionScreen(a.Out)
+			a.page("Onboard a company backend", "Step 2 of 3: choose a safe customer export.")
+		}
+		a.section("Customer export")
+		a.say("  Drag a .csv, .tsv, .json, .jsonl, or .ndjson file into this window.")
+		a.note("Use an export containing stable customer IDs—not the original database.")
+		a.section("Your input")
+		a.command("guide", "Open the step-by-step setup guide")
+		a.command("demo", "Open the dashboard demo")
+		a.command("q", "Cancel without changing anything")
+		a.note("You can also type the full command, such as `bvx onboard guide`.")
+	}
+	for *source == "" {
+		value, err := ask("\n  setup › ")
 		if err != nil {
 			return fmt.Errorf("read customer export path: %w", err)
 		}
-		*source = value
+		if label, url, ok := onboardingResourceForInput(value); ok {
+			a.openOnboardingResource(label, url)
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "q", "quit", "cancel", "bvx onboard q", "bvx onboard cancel":
+			return a.cancelOnboarding()
+		default:
+			value = normalizeInteractivePath(value)
+			if pathErr := validateCustomerExportPath(value); pathErr != nil {
+				a.warn("%v", pathErr)
+				continue
+			}
+			*source = value
+		}
 	}
 	if *source == "" {
 		return errors.New("a past-customer export is required")
 	}
 
-	loaded, err := loadCustomerExport(*source, *idField, *nameField)
+	var loaded customerLoadResult
+	err := a.withLoading("Reading and validating the customer export…", func() error {
+		var loadErr error
+		loaded, loadErr = loadCustomerExport(*source, *idField, *nameField)
+		return loadErr
+	})
 	if err != nil {
 		return err
 	}
-	a.page("Onboard a company backend", "Scan AI traffic and map existing customers by exact stable ID.")
 	a.section("Customer export preview")
 	a.metric("Format", loaded.Format, ansiCyan)
 	a.metric("Rows read", fmt.Sprintf("%d", loaded.RowsRead), ansiCyan)
@@ -177,7 +255,12 @@ func (a *App) cmdOnboard(ctx context.Context, args []string) error {
 	imported := 0
 	for start := 0; start < len(loaded.Customers); start += customerImportBatch {
 		end := min(start+customerImportBatch, len(loaded.Customers))
-		count, importErr := cloud.ImportCustomers(ctx, apiKey, loaded.Customers[start:end])
+		var count int
+		importErr := a.withLoading(fmt.Sprintf("Importing customers %d–%d of %d…", start+1, end, len(loaded.Customers)), func() error {
+			var batchErr error
+			count, batchErr = cloud.ImportCustomers(ctx, apiKey, loaded.Customers[start:end])
+			return batchErr
+		})
 		if importErr != nil {
 			return fmt.Errorf("import customer batch %d: %w (reconnect with `bvx login` if this device predates customer-import authorization)", start/customerImportBatch+1, importErr)
 		}
@@ -190,6 +273,63 @@ func (a *App) cmdOnboard(ctx context.Context, args []string) error {
 	a.note("New customers will be provisioned automatically from X-Brevitas-Customer-ID on first AI traffic.")
 	a.command("bvx status", "Verify the proxy and connected backend")
 	return nil
+}
+
+func (a *App) openOnboardingResource(label, url string) {
+	if err := openBrowser(url); err != nil {
+		a.warn("Could not open %s automatically", strings.ToLower(label))
+		a.command(url, "Open it manually")
+		return
+	}
+	a.ok("Opened %s in your browser", strings.ToLower(label))
+}
+
+func (a *App) cancelOnboarding() error {
+	if a.dashboardActive {
+		a.returnHomeRequested = true
+	}
+	a.note("Onboarding cancelled. No files or customer records were changed.")
+	return nil
+}
+
+func onboardingResourceForInput(value string) (label, url string, ok bool) {
+	switch strings.ToLower(strings.Join(strings.Fields(value), " ")) {
+	case "g", "guide", "docs", "--guide", "bvx onboard guide", "bvx onboard --guide":
+		return "Onboarding guide", onboardingGuideURL, true
+	case "d", "demo", "dashboard", "--demo", "bvx onboard demo", "bvx onboard --demo":
+		return "Dashboard demo", dashboardDemoURL, true
+	default:
+		return "", "", false
+	}
+}
+
+func normalizeInteractivePath(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 {
+		if first, last := value[0], value[len(value)-1]; first == last && (first == '\'' || first == '"') {
+			value = value[1 : len(value)-1]
+		}
+	}
+	return strings.ReplaceAll(value, `\ `, " ")
+}
+
+func validateCustomerExportPath(path string) error {
+	if path == "" {
+		return errors.New("choose a customer export file or press q to cancel")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("cannot open %q; drag the export file here and try again", path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%q is not a file", path)
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".csv", ".tsv", ".json", ".jsonl", ".ndjson":
+		return nil
+	default:
+		return errors.New("choose a CSV, TSV, JSON, JSONL, or NDJSON export")
+	}
 }
 
 func loadCustomerExport(path, idField, nameField string) (customerLoadResult, error) {

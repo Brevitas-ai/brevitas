@@ -30,6 +30,13 @@ type App struct {
 	Out     io.Writer
 	Err     io.Writer
 	In      io.Reader
+
+	// dashboardActive prevents commands launched by Home from opening a
+	// second dashboard. returnHomeRequested lets full-screen child views jump
+	// straight back to the existing Home screen when the user cancels them.
+	dashboardActive       bool
+	dashboardScreenActive bool
+	returnHomeRequested   bool
 }
 
 // command is a single CLI subcommand.
@@ -102,6 +109,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	name := args[0]
 	for _, c := range commands {
 		if c.name == name {
+			if isDashboardViewCommand(name) && a.shouldUseInteractiveDashboard() {
+				return a.runHomeDashboardWithAction(ctx, args)
+			}
 			if err := c.run(a, ctx, args[1:]); err != nil {
 				if colorEnabled(a.Err) {
 					fmt.Fprintf(a.Err, "%s%s✗ bvx %s:%s %v\n", ansiRed, ansiBold, name, ansiReset, err)
@@ -109,6 +119,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 					fmt.Fprintf(a.Err, "✗ bvx %s: %v\n", name, err)
 				}
 				return 1
+			}
+			if name == "install" && a.shouldOpenDashboardAfterInstall(args[1:]) {
+				return a.runHomeDashboard(ctx)
 			}
 			return 0
 		}
@@ -124,22 +137,52 @@ func (a *App) Run(ctx context.Context, args []string) int {
 }
 
 func (a *App) runHomeDashboard(ctx context.Context) int {
+	return a.runHomeDashboardWithAction(ctx, nil)
+}
+
+func (a *App) runHomeDashboardWithAction(ctx context.Context, initialAction []string) int {
+	wasActive := a.dashboardActive
+	a.dashboardActive = true
+	defer func() { a.dashboardActive = wasActive }()
+
+	in, inOK := a.In.(*os.File)
+	out, outOK := a.Out.(*os.File)
+	if inOK && outOK && canUseArrowNavigator(in, out) {
+		wasScreenActive := a.dashboardScreenActive
+		a.dashboardScreenActive = true
+		enterAlternateScreen(out)
+		defer func() {
+			leaveAlternateScreen(out)
+			a.dashboardScreenActive = wasScreenActive
+		}()
+	}
+
 	for {
-		selected, handled, err := a.chooseHomeAction()
-		if err != nil {
-			fmt.Fprintf(a.Err, "bvx: command center: %v\n", err)
-			return 1
-		}
-		if !handled {
-			a.home()
-			return 0
-		}
+		selected := initialAction
+		initialAction = nil
 		if len(selected) == 0 {
-			return 0
+			var handled bool
+			var err error
+			selected, handled, err = a.chooseHomeAction()
+			if err != nil {
+				fmt.Fprintf(a.Err, "bvx: command center: %v\n", err)
+				return 1
+			}
+			if !handled {
+				a.home()
+				return 0
+			}
+			if len(selected) == 0 {
+				return 0
+			}
 		}
 
 		renderHomeActionScreen(a.Out)
 		_ = a.Run(ctx, selected)
+		if a.returnHomeRequested {
+			a.returnHomeRequested = false
+			continue
+		}
 		if isHomeCommandReference(selected) {
 			commandArgs, quit, promptErr := a.promptHomeCommand()
 			if promptErr != nil {
@@ -164,6 +207,26 @@ func (a *App) runHomeDashboard(ctx context.Context) int {
 			return 0
 		}
 	}
+}
+
+func isDashboardViewCommand(name string) bool {
+	return name == "stats"
+}
+
+func (a *App) shouldUseInteractiveDashboard() bool {
+	if a.dashboardActive || os.Getenv("CI") != "" {
+		return false
+	}
+	in, inOK := a.In.(*os.File)
+	out, outOK := a.Out.(*os.File)
+	return inOK && outOK && canUseArrowNavigator(in, out)
+}
+
+// shouldOpenDashboardAfterInstall keeps first-run setup cohesive: interactive
+// installs authenticate, finish setup, then land at Home. Piped commands,
+// help output, CI, and actions already launched from Home stay non-interactive.
+func (a *App) shouldOpenDashboardAfterInstall(args []string) bool {
+	return !helpRequested(args) && a.shouldUseInteractiveDashboard()
 }
 
 func isHomeCommandReference(args []string) bool {

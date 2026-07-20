@@ -57,7 +57,7 @@ func (a *App) printCodebaseHelp(repo string) {
 }
 
 func (a *App) printOnboardHelp() {
-	a.commandHelp("Onboard a company backend", "Scan AI traffic and import exact customer identities.", "bvx onboard [flags] [repo]", []helpOption{
+	a.commandHelp("Onboard a company backend", "Scan AI traffic and import exact customer identities.", "bvx onboard [guide|demo] [flags] [repo]", []helpOption{
 		{"--customers FILE", "Past-customer export: CSV, TSV, JSON, JSONL, or NDJSON"},
 		{"--id-field PATH", "Explicit stable ID field, such as customer.uuid"},
 		{"--name-field PATH", "Opt in to a display-name field, such as profile.company"},
@@ -69,6 +69,8 @@ func (a *App) printOnboardHelp() {
 		{"--no-open", "Do not open the AgentMap report"},
 		{"--target URL", "Override the Brevitas gateway URL"},
 		{"--environment NAME", "Inventory this deployment environment"},
+		{"--guide", "Open the step-by-step onboarding guide"},
+		{"--demo", "Open the Brevitas dashboard demo"},
 		{"-h, --help", "Show this help"},
 	})
 }

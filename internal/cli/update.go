@@ -42,7 +42,12 @@ func (a *App) cmdUpdate(ctx context.Context, args []string) error {
 
 	sys := a.systems()
 
-	current, err := sys.Version(ctx)
+	var current string
+	err := a.withLoading("Checking the installed engine version…", func() error {
+		var versionErr error
+		current, versionErr = sys.Version(ctx)
+		return versionErr
+	})
 	if err != nil {
 		a.warn("brevitas-systems is not installed: %v", err)
 		if !a.confirm(*assumeYes, "Install brevitas-systems now? [y/N] ") {
@@ -72,8 +77,12 @@ type githubRelease struct {
 }
 
 func (a *App) checkCLIUpdate(ctx context.Context) {
-	a.note("Checking GitHub releases…")
-	latest, err := latestCLIRelease(ctx)
+	var latest githubRelease
+	err := a.withLoading("Checking GitHub releases…", func() error {
+		var releaseErr error
+		latest, releaseErr = latestCLIRelease(ctx)
+		return releaseErr
+	})
 	if err != nil {
 		a.warn("Could not check for a BVX CLI update: %v", err)
 		return
@@ -135,8 +144,9 @@ func cliUpgradeCommand(goos string) []string {
 }
 
 func (a *App) doUpgrade(ctx context.Context, sys *optimizer.Systems) error {
-	a.note("Upgrading brevitas-systems…")
-	if err := sys.Upgrade(ctx); err != nil {
+	if err := a.withLoading("Upgrading brevitas-systems…", func() error {
+		return sys.Upgrade(ctx)
+	}); err != nil {
 		return err
 	}
 	v, _ := sys.Version(ctx)

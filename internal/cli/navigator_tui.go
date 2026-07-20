@@ -17,22 +17,26 @@ import (
 )
 
 const (
-	ansiReset   = "\x1b[0m"
-	ansiBold    = "\x1b[1m"
-	ansiDim     = "\x1b[2m"
-	ansiRed     = "\x1b[31m"
-	ansiGreen   = "\x1b[32m"
-	ansiYellow  = "\x1b[33m"
-	ansiBlue    = "\x1b[34m"
-	ansiMagenta = "\x1b[35m"
-	ansiCyan    = "\x1b[36m"
-	ansiTeal    = "\x1b[38;5;44m"
-	ansiOrange  = "\x1b[38;5;208m"
-	ansiPurple  = "\x1b[38;5;141m"
-	ansiPink    = "\x1b[38;5;205m"
-	ansiGray    = "\x1b[38;5;245m"
-	ansiSelect  = "\x1b[48;5;236m\x1b[1m"
+	ansiReset      = "\x1b[0m"
+	ansiBold       = "\x1b[1m"
+	ansiDim        = "\x1b[2m"
+	ansiRed        = "\x1b[31m"
+	ansiGreen      = "\x1b[32m"
+	ansiYellow     = "\x1b[33m"
+	ansiBlue       = "\x1b[34m"
+	ansiMagenta    = "\x1b[35m"
+	ansiCyan       = "\x1b[36m"
+	ansiBrightCyan = "\x1b[96m"
+	ansiWhite      = "\x1b[97m"
+	ansiTeal       = "\x1b[38;5;44m"
+	ansiOrange     = "\x1b[38;5;208m"
+	ansiPurple     = "\x1b[38;5;141m"
+	ansiPink       = "\x1b[38;5;205m"
+	ansiGray       = "\x1b[38;5;245m"
+	ansiSelect     = "\x1b[7m\x1b[1m"
 )
+
+const navigatorFooter = "[q] HOME  •  [g] SETUP GUIDE  •  [d] DASHBOARD DEMO  •  ↑/↓ MOVE  •  ENTER OPEN  •  ← BACK"
 
 type tuiEntryKind int
 
@@ -62,6 +66,8 @@ const (
 	tuiKeyPreview
 	tuiKeyHidden
 	tuiKeyStart
+	tuiKeyGuide
+	tuiKeyDemo
 	tuiKeyQuit
 )
 
@@ -74,11 +80,18 @@ func (a *App) browseDirectoriesTUI(in, out *os.File, shortcuts []directoryShortc
 	if err != nil {
 		return "", false, fmt.Errorf("enable arrow-key input: %w", err)
 	}
+	ownsScreen := !a.dashboardScreenActive
 	defer func() {
 		_ = term.Restore(int(in.Fd()), state)
-		fmt.Fprint(out, ansiReset+"\x1b[?25h\x1b[?1049l\r\n")
+		fmt.Fprint(out, ansiReset+"\x1b[?25h")
+		if ownsScreen {
+			leaveAlternateScreen(out)
+		}
 	}()
-	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l")
+	if ownsScreen {
+		enterAlternateScreen(out)
+	}
+	fmt.Fprint(out, "\x1b[?25l")
 
 	size := func() (int, int) {
 		width, height, sizeErr := term.GetSize(int(out.Fd()))
@@ -173,6 +186,18 @@ func (a *App) browseDirectoriesWithKeys(reader *bufio.Reader, out io.Writer, sho
 		case tuiKeyStart:
 			current = ""
 			cursor = 0
+		case tuiKeyGuide:
+			if err := openBrowser(onboardingGuideURL); err != nil {
+				message = "Setup guide: " + onboardingGuideURL
+			} else {
+				message = "Opened the setup guide in your browser."
+			}
+		case tuiKeyDemo:
+			if err := openBrowser(dashboardDemoURL); err != nil {
+				message = "Dashboard: " + dashboardDemoURL
+			} else {
+				message = "Opened the dashboard demo in your browser."
+			}
 		case tuiKeyQuit:
 			return "", false, nil
 		}
@@ -229,11 +254,11 @@ func renderNavigator(out io.Writer, current string, entries []tuiEntry, cursor i
 
 func renderNavigatorStacked(out io.Writer, current string, entries []tuiEntry, cursor int, showHidden, showPreview bool, message string, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s BVX Repository Navigator %s\r\n", ansiBold, ansiCyan, ansiReset)
+	renderNavigatorHeader(out, width)
 	if current == "" {
-		fmt.Fprintf(out, "%sChoose a starting location%s\r\n\r\n", ansiDim, ansiReset)
+		fmt.Fprintf(out, "%s%sChoose your backend project folder%s\r\n\r\n", ansiWhite, ansiBold, ansiReset)
 	} else {
-		fmt.Fprintf(out, "%s%s%s\r\n\r\n", ansiDim, truncateText(sanitizeTerminalText(current), width-2), ansiReset)
+		fmt.Fprintf(out, "%s%s%s\r\n\r\n", ansiWhite, truncateText(sanitizeTerminalText(current), width-2), ansiReset)
 	}
 
 	previewHeight := 0
@@ -267,18 +292,18 @@ func renderNavigatorStacked(out io.Writer, current string, entries []tuiEntry, c
 	} else {
 		fmt.Fprint(out, "\r\n")
 	}
-	fmt.Fprintf(out, "%s↑/↓ move  Enter/→ open  ←/Backspace up  p preview  h hidden  s shortcuts  q quit%s", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%s%s%s%s", ansiBrightCyan, ansiBold, truncateText(navigatorFooter, width-1), ansiReset)
 }
 
 func renderNavigatorWide(out io.Writer, current string, entries []tuiEntry, cursor int, showHidden bool, message string, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s BVX Repository Navigator %s\x1b[K\r\n", ansiBold, ansiCyan, ansiReset)
-	location := "Choose a starting location"
+	renderNavigatorHeader(out, width)
+	location := "Choose your backend project folder"
 	if current != "" {
 		location = sanitizeTerminalText(current)
 	}
-	fmt.Fprintf(out, "%s%s%s\x1b[K\r\n", ansiDim, truncateText(location, width-2), ansiReset)
-	fmt.Fprintf(out, "%s%s%s\r\n", ansiBlue, strings.Repeat("─", width), ansiReset)
+	fmt.Fprintf(out, "%s%s%s\x1b[K\r\n", ansiWhite, truncateText(location, width-2), ansiReset)
+	fmt.Fprintf(out, "%s%s%s%s\r\n", ansiBrightCyan, ansiBold, strings.Repeat("─", width), ansiReset)
 
 	leftWidth := width * 42 / 100
 	if leftWidth < 28 {
@@ -301,8 +326,8 @@ func renderNavigatorWide(out io.Writer, current string, entries []tuiEntry, curs
 		left := ""
 		right := ""
 		if row == 0 {
-			left = ansiBold + ansiBlue + " FILES" + ansiReset
-			right = ansiBold + ansiMagenta + " PREVIEW" + ansiReset
+			left = ansiBold + ansiBrightCyan + " FILES" + ansiReset
+			right = ansiBold + ansiWhite + " PREVIEW" + ansiReset
 		} else {
 			entryIndex := start + row - 1
 			if entryIndex < end {
@@ -316,18 +341,26 @@ func renderNavigatorWide(out io.Writer, current string, entries []tuiEntry, curs
 			}
 		}
 		fmt.Fprint(out, left)
-		fmt.Fprintf(out, "\x1b[%dG%s│%s %s\x1b[K\r\n", leftWidth+1, ansiBlue, ansiReset, right)
+		fmt.Fprintf(out, "\x1b[%dG%s%s│%s %s\x1b[K\r\n", leftWidth+1, ansiBrightCyan, ansiBold, ansiReset, right)
 	}
 
-	fmt.Fprintf(out, "%s%s%s\r\n", ansiBlue, strings.Repeat("─", width), ansiReset)
-	footer := "↑/↓ move  Enter/→ open  ←/Backspace up  p preview  h hidden  s shortcuts  q quit"
+	fmt.Fprintf(out, "%s%s%s%s\r\n", ansiBrightCyan, ansiBold, strings.Repeat("─", width), ansiReset)
+	footer := navigatorFooter
 	if message != "" {
-		footer = message
-		fmt.Fprint(out, ansiYellow)
+		footer = "[q] BACK TO HOME  •  " + message
+		fmt.Fprint(out, ansiYellow+ansiBold)
 	} else {
-		fmt.Fprint(out, ansiDim)
+		fmt.Fprint(out, ansiBrightCyan+ansiBold)
 	}
 	fmt.Fprintf(out, "%s%s\x1b[K", truncateText(sanitizeTerminalText(footer), width-1), ansiReset)
+}
+
+func renderNavigatorHeader(out io.Writer, width int) {
+	title := " BVX REPOSITORY PICKER"
+	back := "[q] BACK TO HOME"
+	gap := maxInt(1, width-len([]rune(title))-len([]rune(back)))
+	line := truncateText(title+strings.Repeat(" ", gap)+back, width)
+	fmt.Fprintf(out, "%s%s%s%s\x1b[K\r\n", ansiBrightCyan, ansiBold, line, ansiReset)
 }
 
 func renderTUIEntry(out io.Writer, entry tuiEntry, selected, shortcut bool, width int) {
@@ -358,7 +391,7 @@ func widePreviewLines(entry tuiEntry, showHidden bool, width, height int) []stri
 	}
 	lines := []string{
 		color + icon + " " + truncateText(sanitizeTerminalText(name), maxInt(1, width-3)) + ansiReset,
-		ansiDim + truncateText(sanitizeTerminalText(entry.path), width) + ansiReset,
+		ansiWhite + truncateText(sanitizeTerminalText(entry.path), width) + ansiReset,
 		"",
 	}
 	details := previewLines(entry, showHidden, width, maxInt(1, height-len(lines)))
@@ -374,7 +407,7 @@ func tuiEntryIcon(entry tuiEntry) (string, string) {
 	case tuiSelectFolder:
 		return "✓", ansiGreen
 	case tuiShortcut, tuiDirectory:
-		return "▸", ansiBlue
+		return "▸", ansiBrightCyan
 	}
 
 	base := strings.ToLower(filepath.Base(entry.path))
@@ -416,7 +449,7 @@ func renderPreview(out io.Writer, entry tuiEntry, showHidden bool, width int) {
 	label := " Preview "
 	leftWidth := minInt(6, maxInt(1, barWidth-len(label)))
 	rightWidth := maxInt(1, barWidth-leftWidth-len(label))
-	fmt.Fprintf(out, "%s%s%s%s%s\r\n", ansiBlue, strings.Repeat("─", leftWidth), label, strings.Repeat("─", rightWidth), ansiReset)
+	fmt.Fprintf(out, "%s%s%s%s%s%s\r\n", ansiBrightCyan, ansiBold, strings.Repeat("─", leftWidth), label, strings.Repeat("─", rightWidth), ansiReset)
 	lines := previewLines(entry, showHidden, width-4, 5)
 	for i := 0; i < 5; i++ {
 		line := ""
@@ -449,7 +482,7 @@ func directoryPreview(path string, showHidden bool, width, maxLines int) []strin
 		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 && isDirectory(fullPath) {
 			folders++
 			name := truncateText(sanitizeTerminalText(entry.Name())+"/", maxInt(1, width-2))
-			names = append(names, ansiBlue+"▸ "+name+ansiReset)
+			names = append(names, ansiBrightCyan+"▸ "+name+ansiReset)
 		} else {
 			files++
 			icon, color := tuiEntryIcon(tuiEntry{kind: tuiFile, path: fullPath})
@@ -486,10 +519,10 @@ func filePreview(path string, width, maxLines int) []string {
 		return []string{metadata, ansiRed + truncateText(sanitizeTerminalText(err.Error()), width) + ansiReset}
 	}
 	if bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data) {
-		return []string{metadata, ansiDim + "Binary file — text preview unavailable" + ansiReset}
+		return []string{metadata, ansiWhite + "Binary file — text preview unavailable" + ansiReset}
 	}
 	if len(data) == 0 {
-		return []string{metadata, ansiDim + "Empty file" + ansiReset}
+		return []string{metadata, ansiWhite + "Empty file" + ansiReset}
 	}
 
 	lines := []string{metadata}
@@ -512,8 +545,9 @@ func confirmDirectoryTUI(reader *bufio.Reader, out io.Writer, path string, size 
 	for {
 		width, _ := size()
 		fmt.Fprint(out, "\x1b[H\x1b[2J")
-		fmt.Fprintf(out, "%s%s Use this repository? %s\r\n\r\n", ansiBold, ansiCyan, ansiReset)
-		fmt.Fprintf(out, "%s%s%s\r\n\r\n", ansiDim, truncateText(sanitizeTerminalText(path), width-2), ansiReset)
+		renderNavigatorHeader(out, width)
+		fmt.Fprintf(out, "\r\n%s%s Use this repository? %s\r\n\r\n", ansiBold, ansiWhite, ansiReset)
+		fmt.Fprintf(out, "%s%s%s\r\n\r\n", ansiWhite, truncateText(sanitizeTerminalText(path), width-2), ansiReset)
 		choices := []string{"Yes — scan this folder", "No — go back"}
 		for i, choice := range choices {
 			prefix, style := "  ", ""
@@ -522,7 +556,8 @@ func confirmDirectoryTUI(reader *bufio.Reader, out io.Writer, path string, size 
 			}
 			fmt.Fprintf(out, "%s%s%s%s\r\n", style, prefix, choice, ansiReset)
 		}
-		fmt.Fprintf(out, "\r\n%s↑/↓ choose  Enter confirm  ←/Backspace go back  q cancel%s", ansiDim, ansiReset)
+		footer := "[q] BACK TO HOME  •  ↑/↓ choose  •  Enter confirm  •  ←/Backspace go back"
+		fmt.Fprintf(out, "\r\n%s%s%s%s", ansiBrightCyan, ansiBold, truncateText(footer, width-1), ansiReset)
 
 		key, keyErr := readTUIKey(reader)
 		if errors.Is(keyErr, io.EOF) {
@@ -562,6 +597,10 @@ func readTUIKey(reader *bufio.Reader) (tuiKey, error) {
 		return tuiKeyHidden, nil
 	case 's', 'S':
 		return tuiKeyStart, nil
+	case 'g', 'G':
+		return tuiKeyGuide, nil
+	case 'd', 'D':
+		return tuiKeyDemo, nil
 	case 27:
 		second, secondErr := reader.ReadByte()
 		if secondErr != nil {

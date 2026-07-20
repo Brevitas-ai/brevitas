@@ -84,11 +84,18 @@ func (a *App) chooseHomeAction() (args []string, handled bool, err error) {
 	if err != nil {
 		return nil, true, fmt.Errorf("enable command-center input: %w", err)
 	}
+	ownsScreen := !a.dashboardScreenActive
 	defer func() {
 		_ = term.Restore(int(in.Fd()), state)
-		fmt.Fprint(out, ansiReset+"\x1b[?25h\x1b[?1049l\r\n")
+		fmt.Fprint(out, ansiReset+"\x1b[?25h")
+		if ownsScreen {
+			leaveAlternateScreen(out)
+		}
 	}()
-	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l")
+	if ownsScreen {
+		enterAlternateScreen(out)
+	}
+	fmt.Fprint(out, "\x1b[?25l")
 
 	size := func() (int, int) {
 		width, height, sizeErr := term.GetSize(int(out.Fd()))
@@ -109,7 +116,7 @@ func (a *App) waitForHome() (back bool, err error) {
 		return false, nil
 	}
 
-	fmt.Fprintf(out, "\n%s  [ Enter ]  Back to Home     [ q ]  Quit%s", ansiBold+ansiCyan, ansiReset)
+	fmt.Fprintf(out, "\n%s  [ Enter / ← / b ]  BACK TO HOME     [ q ]  QUIT%s", ansiBold+ansiBrightCyan, ansiReset)
 	state, err := term.MakeRaw(int(in.Fd()))
 	if err != nil {
 		return false, fmt.Errorf("enable return-home input: %w", err)
@@ -147,16 +154,23 @@ func waitForHomeKey(reader *bufio.Reader) (bool, error) {
 }
 
 func renderHomeActionScreen(out io.Writer) {
-	// The launcher uses the alternate buffer. Once an action is selected it
-	// returns to the normal buffer, which must be cleared so completed actions
-	// never stack above the newly selected page.
+	// Home and its actions share one alternate terminal buffer. Clear between
+	// views so results never stack beneath the launcher or leak into the shell.
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
+}
+
+func enterAlternateScreen(out io.Writer) {
+	fmt.Fprint(out, "\x1b[?1049h\x1b[H\x1b[2J")
+}
+
+func leaveAlternateScreen(out io.Writer) {
+	fmt.Fprint(out, ansiReset+"\x1b[?25h\x1b[?1049l\r\n")
 }
 
 func (a *App) promptHomeCommand() (args []string, quit bool, err error) {
 	fmt.Fprintf(a.Out, "\n  %s%s◆ RUN A COMMAND%s\n", ansiPink, ansiBold, ansiReset)
-	fmt.Fprintf(a.Out, "  %sType a command below; the `bvx` prefix is optional.%s\n", ansiDim, ansiReset)
-	fmt.Fprintf(a.Out, "  %sBlank Enter returns Home  •  q quits%s\n\n", ansiDim, ansiReset)
+	fmt.Fprintf(a.Out, "  %sType a command below; the `bvx` prefix is optional.%s\n", ansiWhite, ansiReset)
+	fmt.Fprintf(a.Out, "  %s%sBlank Enter returns Home  •  q quits%s\n\n", ansiBrightCyan, ansiBold, ansiReset)
 
 	for {
 		line, promptErr := a.prompt("  " + ansiCyan + ansiBold + "bvx › " + ansiReset)
@@ -282,7 +296,7 @@ func renderHomeMenuWide(out io.Writer, cursor, width, height int) {
 		writeHomeCentered(out, width, line, homeBrandLogoWidth)
 	}
 
-	topBorder := ansiBlue + "╭" + homePanelBorderTitle("ACTIONS", leftWidth) +
+	topBorder := ansiBrightCyan + ansiBold + "╭" + homePanelBorderTitle("ACTIONS", leftWidth) +
 		"┬" + homePanelBorderTitle("SELECTED ACTION", rightWidth) + "╮" + ansiReset
 	writeHomeCentered(out, width, topBorder, frameWidth)
 
@@ -308,11 +322,11 @@ func renderHomeMenuWide(out io.Writer, cursor, width, height int) {
 		{},
 	}
 	for _, line := range wrapTUIText(selected.description, rightWidth-4) {
-		rightRows = append(rightRows, homePanelLine{value: ansiDim + line + ansiReset, width: len([]rune(line))})
+		rightRows = append(rightRows, homePanelLine{value: ansiWhite + line + ansiReset, width: len([]rune(line))})
 	}
 	rightRows = append(rightRows,
 		homePanelLine{},
-		homePanelLine{value: ansiBlue + ansiBold + "READY TO LAUNCH" + ansiReset, width: 15},
+		homePanelLine{value: ansiBrightCyan + ansiBold + "READY TO LAUNCH" + ansiReset, width: 15},
 		homePanelLine{
 			value: fmt.Sprintf("Press %sEnter%s or %s[%c]%s", ansiBold, ansiReset, ansiOrange, selected.shortcut, ansiReset),
 			width: 18,
@@ -326,16 +340,16 @@ func renderHomeMenuWide(out io.Writer, cursor, width, height int) {
 		if panelRow := row - rightStart; panelRow >= 0 && panelRow < len(rightRows) {
 			right = homePanelPad(rightRows[panelRow], rightWidth)
 		}
-		line := ansiBlue + "│" + ansiReset + left + ansiBlue + "│" + ansiReset + right + ansiBlue + "│" + ansiReset
+		line := ansiBrightCyan + ansiBold + "│" + ansiReset + left + ansiBrightCyan + ansiBold + "│" + ansiReset + right + ansiBrightCyan + ansiBold + "│" + ansiReset
 		writeHomeCentered(out, width, line, frameWidth)
 	}
 
-	bottomBorder := ansiBlue + "╰" + strings.Repeat("─", leftWidth) +
+	bottomBorder := ansiBrightCyan + ansiBold + "╰" + strings.Repeat("─", leftWidth) +
 		"┴" + strings.Repeat("─", rightWidth) + "╯" + ansiReset
 	writeHomeCentered(out, width, bottomBorder, frameWidth)
 
-	footer := "↑/↓ navigate  •  Enter launch  •  actions return Home  •  q quit"
-	writeHomeCenteredFinal(out, width, ansiDim+truncateText(footer, width-2)+ansiReset, minInt(len([]rune(footer)), width-2))
+	footer := "↑/↓ NAVIGATE  •  ENTER LAUNCH  •  ACTIONS RETURN HOME  •  [q] QUIT"
+	writeHomeCenteredFinal(out, width, ansiBrightCyan+ansiBold+truncateText(footer, width-2)+ansiReset, minInt(len([]rune(footer)), width-2))
 }
 
 type homePanelLine struct {
@@ -364,8 +378,8 @@ func homePanelPad(line homePanelLine, width int) string {
 
 func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s brevitas %s  %shome%s\r\n", ansiBold, ansiCyan, ansiReset, ansiDim, ansiReset)
-	fmt.Fprintf(out, "%sStart here: choose what you want to set up or inspect.%s\r\n\r\n", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%s%s BREVITAS %s  %sHOME%s\r\n", ansiBold, ansiBrightCyan, ansiReset, ansiWhite+ansiBold, ansiReset)
+	fmt.Fprintf(out, "%sStart here: choose what you want to set up or inspect.%s\r\n\r\n", ansiWhite, ansiReset)
 	visible := maxInt(4, height-9)
 	start := 0
 	if cursor >= visible {
@@ -379,8 +393,8 @@ func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 		fmt.Fprint(out, "\r\n")
 	}
 	fmt.Fprintf(out, "\r\n%s%s%s\r\n", homeActions[cursor].color+ansiBold, truncateText(homeActions[cursor].command, width-1), ansiReset)
-	fmt.Fprintf(out, "%s%s%s\r\n", ansiDim, truncateText(homeActions[cursor].description, width-1), ansiReset)
-	fmt.Fprintf(out, "\r\n%s↑/↓ navigate  Enter launch  actions return Home  q quit%s", ansiDim, ansiReset)
+	fmt.Fprintf(out, "%s%s%s\r\n", ansiWhite, truncateText(homeActions[cursor].description, width-1), ansiReset)
+	fmt.Fprintf(out, "\r\n%s%s↑/↓ NAVIGATE  •  ENTER LAUNCH  •  [q] QUIT%s", ansiBrightCyan, ansiBold, ansiReset)
 }
 
 func formatHomeAction(action homeAction, selected bool, width int) string {

@@ -179,12 +179,15 @@ func TestBrowseDirectoriesHandlesMissingLocationAndEOF(t *testing.T) {
 
 func TestInstallRepoCancellationDoesNotStartScanner(t *testing.T) {
 	var output bytes.Buffer
-	app := &App{In: strings.NewReader("q\n"), Out: &output, Err: &output}
+	app := &App{In: strings.NewReader("q\n"), Out: &output, Err: &output, dashboardActive: true}
 	if err := app.cmdInstall(t.Context(), []string{"repo", "--apply"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "Installation cancelled.") {
 		t.Fatalf("output = %q", output.String())
+	}
+	if !app.returnHomeRequested {
+		t.Fatal("dashboard cancellation did not request an immediate return Home")
 	}
 }
 

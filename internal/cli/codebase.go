@@ -70,7 +70,9 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	}
 	if key, keyErr := a.apiKeyFunc()(ctx); keyErr != nil {
 		a.warn("Could not register this repository in the dashboard: %v", keyErr)
-	} else if registerErr := a.registerCodebaseInstallation(ctx, key, abs, *environment); registerErr != nil {
+	} else if registerErr := a.withLoading("Connecting the repository to your dashboard…", func() error {
+		return a.registerCodebaseInstallation(ctx, key, abs, *environment)
+	}); registerErr != nil {
 		a.warn("Repository scanned, but dashboard registration is unavailable: %v", registerErr)
 	} else {
 		a.ok("Repository connected to your Brevitas dashboard")

@@ -22,7 +22,7 @@ func TestHomeMenuLaunchesSelectedActionWithArrowKeys(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"ACTIONS", "SELECTED ACTION", "Configure AI tools", "READY TO LAUNCH", "[a]",
-		"↑/↓ navigate", "╭", "╯", "██████╗", ansiBrandBlue, ansiSelect,
+		"↑/↓ NAVIGATE", "╭", "╯", "██████╗", ansiBrandBlue, ansiBrightCyan, ansiSelect,
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("TUI output missing %q", expected)
@@ -174,6 +174,35 @@ func TestHomeActionStartsOnCleanScreen(t *testing.T) {
 	}
 }
 
+func TestDashboardOwnsOneAlternateScreenUntilExit(t *testing.T) {
+	var output bytes.Buffer
+	enterAlternateScreen(&output)
+	renderHomeActionScreen(&output)
+	leaveAlternateScreen(&output)
+
+	got := output.String()
+	if strings.Count(got, "\x1b[?1049h") != 1 {
+		t.Fatalf("dashboard entered the alternate screen more than once: %q", got)
+	}
+	if strings.Count(got, "\x1b[?1049l") != 1 {
+		t.Fatalf("dashboard did not restore the normal terminal exactly once: %q", got)
+	}
+	if !strings.Contains(got, "\x1b[H\x1b[2J") {
+		t.Fatalf("dashboard did not clear between views: %q", got)
+	}
+}
+
+func TestSavingsCommandUsesDashboardView(t *testing.T) {
+	if !isDashboardViewCommand("stats") {
+		t.Fatal("stats should open in the dashboard view")
+	}
+	for _, command := range []string{"status", "doctor", "install"} {
+		if isDashboardViewCommand(command) {
+			t.Fatalf("%s unexpectedly opens in the dashboard view", command)
+		}
+	}
+}
+
 func TestParseHomeCommandLine(t *testing.T) {
 	tests := []struct {
 		input string
@@ -221,7 +250,7 @@ func TestCommandReferencePromptAcceptsOptionalBVXPrefix(t *testing.T) {
 func TestNarrowHomeExplainsHowToStart(t *testing.T) {
 	var output bytes.Buffer
 	renderHomeMenu(&output, 0, 50, 20)
-	for _, expected := range []string{"brevitas", "home", "Start here", "[r]", "bvx install repo"} {
+	for _, expected := range []string{"BREVITAS", "HOME", "Start here", "[r]", "bvx install repo"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("narrow home missing %q: %q", expected, output.String())
 		}

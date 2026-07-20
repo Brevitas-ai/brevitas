@@ -52,7 +52,12 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 		return fmt.Errorf("prepare device identity: %w", err)
 	}
 	device := cloud.Device(deviceID)
-	auth, err := cloud.StartDeviceAuthorizationFor(ctx, device)
+	var auth *cloud.DeviceAuthorization
+	err = a.withLoading("Starting secure browser login…", func() error {
+		var startErr error
+		auth, startErr = cloud.StartDeviceAuthorizationFor(ctx, device)
+		return startErr
+	})
 	if err != nil {
 		return fmt.Errorf("start browser login: %w", err)
 	}
@@ -63,8 +68,6 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 			a.warn("Could not open a browser; use the URL above")
 		}
 	}
-	a.note("Waiting for dashboard approval…")
-
 	expires := time.Duration(auth.ExpiresIn) * time.Second
 	if expires <= 0 {
 		expires = 10 * time.Minute
@@ -77,20 +80,28 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for {
-		key, pending, err := cloud.PollDeviceAuthorizationFor(loginCtx, auth.DeviceCode, device)
-		if err != nil {
-			return fmt.Errorf("finish browser login: %w", err)
+	var apiKey string
+	err = a.withLoading("Waiting for dashboard approval…", func() error {
+		for {
+			key, pending, pollErr := cloud.PollDeviceAuthorizationFor(loginCtx, auth.DeviceCode, device)
+			if pollErr != nil {
+				return fmt.Errorf("finish browser login: %w", pollErr)
+			}
+			if !pending {
+				apiKey = key
+				return nil
+			}
+			select {
+			case <-loginCtx.Done():
+				return errors.New("browser login expired; run `bvx login` again")
+			case <-ticker.C:
+			}
 		}
-		if !pending {
-			return a.storeAPIKey(ctx, key)
-		}
-		select {
-		case <-loginCtx.Done():
-			return errors.New("browser login expired; run `bvx login` again")
-		case <-ticker.C:
-		}
+	})
+	if err != nil {
+		return err
 	}
+	return a.storeAPIKey(ctx, apiKey)
 }
 
 func (a *App) ensureDeviceIdentity() (string, error) {
@@ -108,7 +119,9 @@ func (a *App) storeAPIKey(ctx context.Context, key string) error {
 	if key == "" {
 		return errors.New("no API key provided")
 	}
-	if err := a.Keyring.Set(ctx, key); err != nil {
+	if err := a.withLoading("Saving the API key securely…", func() error {
+		return a.Keyring.Set(ctx, key)
+	}); err != nil {
 		return fmt.Errorf("store key in %s: %w", a.Keyring.Backend(), err)
 	}
 	a.ok("API key stored in %s", a.Keyring.Backend())
@@ -116,7 +129,9 @@ func (a *App) storeAPIKey(ctx context.Context, key string) error {
 }
 
 func (a *App) cmdLogout(ctx context.Context, _ []string) error {
-	err := a.Keyring.Delete(ctx)
+	err := a.withLoading("Removing the stored API key…", func() error {
+		return a.Keyring.Delete(ctx)
+	})
 	if errors.Is(err, keyring.ErrNotFound) {
 		a.say("No API key was stored.")
 		return nil

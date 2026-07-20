@@ -21,8 +21,10 @@ func (a *App) cmdProviders(ctx context.Context, args []string) error {
 		return err
 	}
 
-	statuses := a.registry().Statuses(ctx)
 	a.page("AI tool compatibility", "Detection and configuration support on this machine.")
+	loading := a.startLoading("Inspecting AI tool installations…")
+	statuses := a.registry().Statuses(ctx)
+	loading.Stop()
 	a.section("Providers")
 
 	tw := tabwriter.NewWriter(a.Out, 0, 2, 2, ' ', 0)

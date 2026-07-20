@@ -20,6 +20,7 @@ type check struct {
 
 func (a *App) cmdDoctor(ctx context.Context, _ []string) error {
 	a.page("Diagnostics", "Checking the complete Brevitas installation.")
+	loading := a.startLoading("Running installation diagnostics…")
 
 	var checks []check
 	add := func(name string, err error) { checks = append(checks, check{name: name, err: err}) }
@@ -78,6 +79,7 @@ func (a *App) cmdDoctor(ctx context.Context, _ []string) error {
 			addWarn("config: "+s.Name, fmt.Errorf("detected but not configured"))
 		}
 	}
+	loading.Stop()
 
 	// Render.
 	var failed int

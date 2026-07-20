@@ -252,9 +252,12 @@ calls and is forwarded only to a configured Brevitas gateway. See
 
 ```bash
 bvx onboard --customers ./customer-export.json --apply /srv/company-backend
+bvx onboard guide     # open the step-by-step guide
+bvx onboard demo      # open the dashboard demo
 ```
 
-Without flags it asks for the backend codebase and a past-customer database export. It supports
+Without flags it opens a guided project-folder picker, then asks you to drag in a customer export.
+Press `g` for the setup guide, `d` for the dashboard demo, or `q` to cancel without changes. It supports
 CSV/TSV/semicolon files, JSON arrays or wrappers, JSONL/NDJSON, nested fields, and keyed JSON
 maps. Customer-specific fields such as `external_id`, `customerId`, `userId`, and `account_id`
 are detected automatically. Generic `id`/`uuid` fields and ambiguous records are rejected until

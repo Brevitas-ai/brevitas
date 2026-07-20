@@ -75,7 +75,12 @@ func (a *App) optimizerAvailable(ctx context.Context) bool {
 
 func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 	sys := a.systems()
-	current, err := sys.Version(ctx)
+	var current string
+	err := a.withLoading("Checking the optimization engine…", func() error {
+		var versionErr error
+		current, versionErr = sys.Version(ctx)
+		return versionErr
+	})
 	if err == nil && optimizer.CompareVersions(current, version.PinnedSystemsVersion) == 0 {
 		return a.optimizerAvailable(ctx)
 	}
@@ -98,18 +103,31 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 			a.fail("optimizer install: Python 3 is required")
 			return false
 		}
-		if output, err := exec.CommandContext(ctx, base, "-m", "venv", venv).CombinedOutput(); err != nil {
+		var output []byte
+		err := a.withLoading("Creating an isolated Python environment…", func() error {
+			var commandErr error
+			output, commandErr = exec.CommandContext(ctx, base, "-m", "venv", venv).CombinedOutput()
+			return commandErr
+		})
+		if err != nil {
 			a.fail("optimizer install: create Python environment: %v: %s", err, output)
 			return false
 		}
 	}
-	if output, err := exec.CommandContext(ctx, python, "-m", "pip", "install", "--upgrade", "pip", "setuptools").CombinedOutput(); err != nil {
+	var output []byte
+	err = a.withLoading("Preparing secure Python tooling…", func() error {
+		var commandErr error
+		output, commandErr = exec.CommandContext(ctx, python, "-m", "pip", "install", "--upgrade", "pip", "setuptools").CombinedOutput()
+		return commandErr
+	})
+	if err != nil {
 		a.fail("optimizer install: secure Python tooling: %v: %s", err, output)
 		return false
 	}
 	sys = optimizer.NewSystems(python)
-	a.note("Installing brevitas-systems %s…", version.PinnedSystemsVersion)
-	if err := sys.Upgrade(ctx); err != nil {
+	if err := a.withLoading(fmt.Sprintf("Installing brevitas-systems %s…", version.PinnedSystemsVersion), func() error {
+		return sys.Upgrade(ctx)
+	}); err != nil {
 		a.fail("optimizer install: %v", err)
 		return false
 	}
@@ -147,7 +165,9 @@ func (a *App) installServices(ctx context.Context) {
 	pm, err := a.proxyManager()
 	if err != nil {
 		a.fail("proxy service: %v", err)
-	} else if err := a.ensureStarted(ctx, pm); err != nil {
+	} else if err := a.withLoading("Installing and starting the proxy…", func() error {
+		return a.ensureStarted(ctx, pm)
+	}); err != nil {
 		a.fail("proxy service: %v", err)
 	} else {
 		a.ok("Background service installed")
@@ -159,7 +179,9 @@ func (a *App) installServices(ctx context.Context) {
 		return
 	}
 	if a.ensureOptimizerInstalled(ctx) {
-		if err := a.ensureStarted(ctx, om); err != nil {
+		if err := a.withLoading("Starting the optimization engine…", func() error {
+			return a.ensureStarted(ctx, om)
+		}); err != nil {
 			a.fail("optimizer service: %v", err)
 		} else {
 			a.ok("Optimizer started (brevitas-systems)")
@@ -176,7 +198,9 @@ func (a *App) cmdStart(ctx context.Context, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.ensureStarted(ctx, pm); err != nil {
+	if err := a.withLoading("Starting the proxy…", func() error {
+		return a.ensureStarted(ctx, pm)
+	}); err != nil {
 		return err
 	}
 	a.ok("proxy started (%s)", pm.Backend())
@@ -186,7 +210,9 @@ func (a *App) cmdStart(ctx context.Context, _ []string) error {
 		return err
 	}
 	if a.optimizerAvailable(ctx) {
-		if err := a.ensureStarted(ctx, om); err != nil {
+		if err := a.withLoading("Starting the optimization engine…", func() error {
+			return a.ensureStarted(ctx, om)
+		}); err != nil {
 			a.fail("optimizer: %v", err)
 		} else {
 			a.ok("optimizer started")
@@ -208,7 +234,9 @@ func (a *App) cmdStop(ctx context.Context, _ []string) error {
 		if st, _ := s.mgr.Status(ctx); st == service.StateNotInstalled {
 			continue
 		}
-		if err := s.mgr.Stop(ctx); err != nil {
+		if err := a.withLoading("Stopping the "+s.name+"…", func() error {
+			return s.mgr.Stop(ctx)
+		}); err != nil {
 			a.fail("%s: %v", s.name, err)
 		} else {
 			a.ok("%s stopped", s.name)
@@ -230,11 +258,12 @@ func (a *App) cmdRestart(ctx context.Context, _ []string) error {
 			a.warn("optimizer skipped — brevitas-systems not found")
 			continue
 		}
-		if err := a.ensureStarted(ctx, s.mgr); err != nil {
-			a.fail("%s: %v", s.name, err)
-			continue
-		}
-		if err := s.mgr.Restart(ctx); err != nil {
+		if err := a.withLoading("Restarting the "+s.name+"…", func() error {
+			if err := a.ensureStarted(ctx, s.mgr); err != nil {
+				return err
+			}
+			return s.mgr.Restart(ctx)
+		}); err != nil {
 			a.fail("%s: %v", s.name, err)
 		} else {
 			a.ok("%s restarted", s.name)

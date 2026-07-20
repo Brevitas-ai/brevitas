@@ -27,11 +27,20 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 	// 1. Restore provider configs from backups.
 	reg := a.registry()
 	for _, p := range reg.All() {
-		if err := p.Uninstall(ctx); err != nil {
+		enabled := contains(a.Cfg.EnabledProviders, p.Name())
+		var err error
+		if enabled {
+			err = a.withLoading("Restoring "+p.DisplayName()+"…", func() error {
+				return p.Uninstall(ctx)
+			})
+		} else {
+			err = p.Uninstall(ctx)
+		}
+		if err != nil {
 			a.fail("%s: %v", p.DisplayName(), err)
 			continue
 		}
-		if contains(a.Cfg.EnabledProviders, p.Name()) {
+		if enabled {
 			a.ok("%s restored", p.DisplayName())
 		}
 	}
@@ -40,7 +49,9 @@ func (a *App) cmdUninstall(ctx context.Context, args []string) error {
 	if svcs, err := a.services(); err == nil {
 		a.section("Removing services")
 		for _, s := range svcs {
-			if err := s.mgr.Uninstall(ctx); err != nil {
+			if err := a.withLoading("Removing the "+s.name+" service…", func() error {
+				return s.mgr.Uninstall(ctx)
+			}); err != nil {
 				a.fail("%s service: %v", s.name, err)
 			} else {
 				a.ok("%s service removed", s.name)

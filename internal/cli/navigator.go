@@ -28,7 +28,7 @@ func (a *App) printRepositoryNavigatorHelp() {
 	a.command("p", "Toggle the file preview pane")
 	a.command("h", "Show or hide hidden entries")
 	a.command("s", "Return to starting locations")
-	a.command("q", "Cancel")
+	a.command("q", "Back to the Home dashboard")
 	a.section("Flags")
 	a.command("--apply", "Route the codebase through Brevitas")
 	a.command("--auto", "Also rewrite hardcoded provider URLs")
@@ -150,14 +150,14 @@ func (a *App) printDirectoryShortcuts(shortcuts []directoryShortcut) {
 	a.page("Repository navigator", "Choose where your repository is located.")
 	a.section("Starting locations")
 	for i, shortcut := range shortcuts {
-		fmt.Fprintf(a.Out, "  %s  %-20s %s\n", a.styled(ansiCyan+ansiBold, strconv.Itoa(i+1)), shortcut.label, a.styled(ansiDim, shortcut.path))
+		fmt.Fprintf(a.Out, "  %s  %-20s %s\n", a.styled(ansiCyan+ansiBold, strconv.Itoa(i+1)), shortcut.label, shortcut.path)
 	}
 	fmt.Fprintf(a.Out, "  %s  Cancel\n", a.styled(ansiRed+ansiBold, "q"))
 }
 
 func (a *App) printDirectory(current string, children []string, showHidden bool) {
 	a.section("Browsing")
-	a.say("  Browsing: %s", a.styled(ansiDim, current))
+	a.say("  Browsing: %s", a.styled(ansiWhite, current))
 	fmt.Fprintf(a.Out, "  %s  Select this folder\n", a.styled(ansiGreen+ansiBold, "0"))
 	for i, child := range children {
 		fmt.Fprintf(a.Out, "  %s  %s%s/%s\n", a.styled(ansiCyan+ansiBold, strconv.Itoa(i+1)), ansiBlueIf(a), filepath.Base(child), ansiResetIfApp(a))

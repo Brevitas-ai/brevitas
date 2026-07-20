@@ -371,10 +371,95 @@ func TestOnboardCommandPromptsForCodebaseAndPastCustomerExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, prompt := range []string{
-		"Company backend codebase path:", "Past-customer database export", "DRY RUN COMPLETE",
+		"GUIDED SETUP", "Backend project folder", "Drag a .csv", "YOUR INPUT", "setup ›", "DRY RUN COMPLETE",
 	} {
 		if !strings.Contains(output.String(), prompt) {
 			t.Fatalf("interactive output missing %q:\n%s", prompt, output.String())
 		}
+	}
+}
+
+func TestOnboardingInputAcceptsShortAndFullGuideCommands(t *testing.T) {
+	for _, input := range []string{
+		"g", "guide", "--guide", "bvx onboard guide", "bvx   onboard   --guide",
+	} {
+		label, url, ok := onboardingResourceForInput(input)
+		if !ok || label != "Onboarding guide" || url != onboardingGuideURL {
+			t.Fatalf("guide input %q = %q, %q, %v", input, label, url, ok)
+		}
+	}
+	for _, input := range []string{"d", "demo", "bvx onboard demo", "bvx onboard --demo"} {
+		label, url, ok := onboardingResourceForInput(input)
+		if !ok || label != "Dashboard demo" || url != dashboardDemoURL {
+			t.Fatalf("demo input %q = %q, %q, %v", input, label, url, ok)
+		}
+	}
+}
+
+func TestDroppedCustomerExportPathIsNormalizedAndValidated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "past customers.csv")
+	if err := os.WriteFile(path, []byte("customer_id\ncust-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, input := range []string{"'" + path + "'", `"` + path + `"`, strings.ReplaceAll(path, " ", `\ `)} {
+		normalized := normalizeInteractivePath(input)
+		if normalized != path {
+			t.Fatalf("normalizeInteractivePath(%q) = %q, want %q", input, normalized, path)
+		}
+		if err := validateCustomerExportPath(normalized); err != nil {
+			t.Fatalf("valid dropped path rejected: %v", err)
+		}
+	}
+
+	bad := filepath.Join(t.TempDir(), "customers.xlsx")
+	if err := os.WriteFile(bad, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateCustomerExportPath(bad); err == nil || !strings.Contains(err.Error(), "CSV") {
+		t.Fatalf("unsupported export error = %v", err)
+	}
+}
+
+func TestOnboardGuideAndDemoOpenInBrowser(t *testing.T) {
+	previous := openBrowser
+	defer func() { openBrowser = previous }()
+
+	for _, test := range []struct {
+		flag string
+		want string
+	}{
+		{flag: "--guide", want: onboardingGuideURL},
+		{flag: "--demo", want: dashboardDemoURL},
+	} {
+		t.Run(test.flag, func(t *testing.T) {
+			opened := ""
+			openBrowser = func(url string) error {
+				opened = url
+				return nil
+			}
+			var output bytes.Buffer
+			app := &App{Cfg: config.Default(), In: strings.NewReader(""), Out: &output, Err: &output}
+			if err := app.cmdOnboard(context.Background(), []string{test.flag}); err != nil {
+				t.Fatal(err)
+			}
+			if opened != test.want || !strings.Contains(output.String(), "Opened") {
+				t.Fatalf("opened=%q output=%q", opened, output.String())
+			}
+		})
+	}
+}
+
+func TestOnboardCancellationReturnsToDashboard(t *testing.T) {
+	var output bytes.Buffer
+	app := &App{
+		Cfg: config.Default(), In: strings.NewReader("q\n"), Out: &output, Err: &output,
+		dashboardActive: true,
+	}
+	if err := app.cmdOnboard(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if !app.returnHomeRequested || !strings.Contains(output.String(), "No files or customer records were changed") {
+		t.Fatalf("cancel did not safely return Home: requested=%v output=%q", app.returnHomeRequested, output.String())
 	}
 }

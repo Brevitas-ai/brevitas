@@ -24,6 +24,8 @@ func TestReadTUIKey(t *testing.T) {
 		{name: "preview", input: "p", want: tuiKeyPreview},
 		{name: "hidden", input: "h", want: tuiKeyHidden},
 		{name: "shortcuts", input: "s", want: tuiKeyStart},
+		{name: "guide", input: "g", want: tuiKeyGuide},
+		{name: "dashboard demo", input: "d", want: tuiKeyDemo},
 		{name: "quit", input: "q", want: tuiKeyQuit},
 	}
 	for _, test := range tests {
@@ -134,7 +136,7 @@ func TestArrowNavigatorSelectsNestedRepository(t *testing.T) {
 	if !ok || selected != project {
 		t.Fatalf("selection = %q, %v; want %q, true", selected, ok, project)
 	}
-	for _, want := range []string{"BVX Repository Navigator", "PREVIEW", "│", "↑/↓ move", "Use this repository?", ansiBlue} {
+	for _, want := range []string{"BVX REPOSITORY PICKER", "[g] SETUP GUIDE", "[d] DASHBOARD DEMO", "PREVIEW", "│", "Use this repository?", ansiBrightCyan} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("missing %q in TUI output", want)
 		}

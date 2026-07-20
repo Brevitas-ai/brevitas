@@ -52,8 +52,9 @@ and authorizes the customer ID within that organization.
 BVX never tries to infer a customer from a repository, path, prompt, or source
 file.
 
-For existing customers, `bvx onboard` reads a local CSV/JSON/JSONL database
-export, detects common stable-ID fields, previews invalid rows and duplicates,
+For existing customers, `bvx onboard` opens a guided backend-folder picker and
+accepts a dragged-in local CSV/JSON/JSONL export. Press `g` for the setup guide,
+`d` for the dashboard demo, or `q` to cancel. It detects common stable-ID fields, previews invalid rows and duplicates,
 then imports exact IDs in batches of 1,000. It never uploads the export itself
 or any unselected columns. Generic or ambiguous IDs require `--id-field`; names
 remain local unless explicitly selected with `--name-field`. Fuzzy or semantic
@@ -75,7 +76,7 @@ All calls use JSON and the BVX user agent. Authenticated calls use
     "platform": "linux",
     "arch": "amd64"
   },
-  "client": {"name": "bvx", "version": "0.1.25"}
+  "client": {"name": "bvx", "version": "0.1.26"}
 }
 ```
 
@@ -102,7 +103,7 @@ The response remains:
     "platform": "linux",
     "arch": "amd64"
   },
-  "client": {"name": "bvx", "version": "0.1.25"}
+  "client": {"name": "bvx", "version": "0.1.26"}
 }
 ```
 
@@ -126,7 +127,7 @@ Pending authorization returns `202`. Approval returns `200` with
     "label": "finance-backend"
   },
   "environment": "production",
-  "client": {"name": "bvx", "version": "0.1.25"}
+  "client": {"name": "bvx", "version": "0.1.26"}
 }
 ```
 
@@ -155,7 +156,7 @@ During a rolling backend upgrade, BVX falls back to the legacy
     "arch": "amd64"
   },
   "environment": "production",
-  "client": {"name": "bvx", "version": "0.1.25"}
+  "client": {"name": "bvx", "version": "0.1.26"}
 }
 ```
 

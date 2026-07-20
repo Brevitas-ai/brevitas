@@ -22,7 +22,9 @@ func (a *App) cmdRepair(ctx context.Context, _ []string) error {
 		if p == nil {
 			continue
 		}
-		if err := p.Install(ctx); err != nil {
+		if err := a.withLoading("Reconfiguring "+p.DisplayName()+"…", func() error {
+			return p.Install(ctx)
+		}); err != nil {
 			if _, ok := provider.IsManualStep(err); ok {
 				a.warn("%s: manual step still required", p.DisplayName())
 				continue
@@ -30,7 +32,9 @@ func (a *App) cmdRepair(ctx context.Context, _ []string) error {
 			a.fail("%s: %v", p.DisplayName(), err)
 			continue
 		}
-		if err := p.Validate(ctx); err != nil {
+		if err := a.withLoading("Verifying "+p.DisplayName()+"…", func() error {
+			return p.Validate(ctx)
+		}); err != nil {
 			a.fail("%s: %v", p.DisplayName(), err)
 		} else {
 			a.ok("%s re-configured", p.DisplayName())
