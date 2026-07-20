@@ -11,8 +11,8 @@ func TestHomeHighlightsFirstRunCommands(t *testing.T) {
 	renderHome(&output, true)
 
 	for _, expected := range []string{
-		"BREVITAS", "Optimize AI work without changing how you work", "bvx install repo", "bvx install ai",
-		"bvx status", "bvx stats", "bvx help", ansiCyan,
+		"██████╗", "BREVITAS", "Optimize every AI request without changing how you work", "START HERE",
+		"bvx install repo", "bvx install ai", "bvx status", "bvx stats", "bvx help", ansiCyan,
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("home screen missing %q: %q", expected, output.String())

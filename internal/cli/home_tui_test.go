@@ -21,12 +21,31 @@ func TestHomeMenuLaunchesSelectedActionWithArrowKeys(t *testing.T) {
 		t.Fatalf("selection = %q, handled=%v", args, handled)
 	}
 	for _, expected := range []string{
-		"BREVITAS", "ACTIONS", "PREVIEW", "│", "Configure AI tools",
+		"██████╗", "BREVITAS", "START HERE", "EXPLORE", "Configure AI tools", "[a]",
 		"↑/↓ navigate", ansiSelect,
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("TUI output missing %q", expected)
 		}
+	}
+}
+
+func TestHomeMenuLaunchesActionsWithShortcutKeys(t *testing.T) {
+	for _, action := range homeActions {
+		t.Run(action.label, func(t *testing.T) {
+			var output bytes.Buffer
+			args, handled, err := homeMenuWithKeys(
+				bufio.NewReader(strings.NewReader(string(action.shortcut))),
+				&output,
+				func() (int, int) { return 100, 30 },
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !handled || strings.Join(args, " ") != strings.Join(action.args, " ") {
+				t.Fatalf("shortcut %q dispatched %q, handled=%v; want %q", action.shortcut, args, handled, action.args)
+			}
+		})
 	}
 }
 
@@ -83,5 +102,18 @@ func TestHomeMenuArrowNavigationWraps(t *testing.T) {
 	}
 	if !handled || strings.Join(args, " ") != "install repo" {
 		t.Fatalf("wrapped selection = %q, handled=%v", args, handled)
+	}
+}
+
+func TestNarrowHomeExplainsHowToStart(t *testing.T) {
+	var output bytes.Buffer
+	renderHomeMenu(&output, 0, 50, 20)
+	for _, expected := range []string{"BVX", "Brevitas home", "Start here", "[r]", "bvx install repo"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("narrow home missing %q: %q", expected, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "██████╗") {
+		t.Fatal("narrow home unexpectedly rendered the large logo")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"golang.org/x/term"
 )
@@ -15,66 +16,57 @@ type homeAction struct {
 	label       string
 	command     string
 	description string
-	details     []string
 	args        []string
 	icon        string
 	color       string
+	shortcut    rune
 }
 
 var homeActions = []homeAction{
 	{
 		label: "Connect repository", command: "bvx install repo",
 		description: "Browse to a codebase, authenticate, scan it, and connect it to Brevitas.",
-		details:     []string{"Full-screen directory browser", "Safe API-key authorization", "Repository usage appears in your dashboard"},
-		args:        []string{"install", "repo"}, icon: "▸", color: ansiCyan,
+		args:        []string{"install", "repo"}, icon: "▸", color: ansiCyan, shortcut: 'r',
 	},
 	{
 		label: "Configure AI tools", command: "bvx install ai",
 		description: "Detect supported AI clients and route them through the local Brevitas proxy.",
-		details:     []string{"Claude Code, Codex, Continue, Aider, and more", "Backs up every changed configuration", "Starts the proxy and optimizer services"},
-		args:        []string{"install", "ai"}, icon: "◆", color: ansiPink,
+		args:        []string{"install", "ai"}, icon: "◆", color: ansiPink, shortcut: 'a',
 	},
 	{
 		label: "System status", command: "bvx status",
 		description: "Inspect services, Keychain authentication, optimizer health, and configured tools.",
-		details:     []string{"Proxy and optimizer state", "Secure key availability", "Configured provider summary"},
-		args:        []string{"status"}, icon: "●", color: ansiGreen,
+		args:        []string{"status"}, icon: "●", color: ansiGreen, shortcut: 's',
 	},
 	{
 		label: "Savings dashboard", command: "bvx stats",
 		description: "See local request, caching, token, and verified savings metrics.",
-		details:     []string{"Lossless cache activity", "Brevitas-attributed savings", "Prompt compression metrics"},
-		args:        []string{"stats"}, icon: "▲", color: ansiOrange,
+		args:        []string{"stats"}, icon: "▲", color: ansiOrange, shortcut: 'v',
 	},
 	{
 		label: "Run diagnostics", command: "bvx doctor",
 		description: "Check the full installation and surface anything that needs attention.",
-		details:     []string{"Service and proxy checks", "Network and engine checks", "AI-tool configuration validation"},
-		args:        []string{"doctor"}, icon: "✦", color: ansiPurple,
+		args:        []string{"doctor"}, icon: "✦", color: ansiPurple, shortcut: 'd',
 	},
 	{
 		label: "AI tool compatibility", command: "bvx providers",
 		description: "Review every supported AI tool and its detection or configuration state.",
-		details:     []string{"Full and partial support", "Detected tools", "Manual configuration notes"},
-		args:        []string{"providers"}, icon: "◇", color: ansiBlue,
+		args:        []string{"providers"}, icon: "◇", color: ansiBlue, shortcut: 'p',
 	},
 	{
 		label: "Connect account", command: "bvx login",
 		description: "Authorize this computer and store a revocable key in the OS credential manager.",
-		details:     []string{"Browser-based approval", "No plaintext key files", "macOS Keychain / native credential store"},
-		args:        []string{"login"}, icon: "●", color: ansiTeal,
+		args:        []string{"login"}, icon: "●", color: ansiTeal, shortcut: 'l',
 	},
 	{
 		label: "Command reference", command: "bvx help",
 		description: "Open the complete Brevitas command reference.",
-		details:     []string{"Install and lifecycle commands", "Configuration commands", "Command-specific help"},
-		args:        []string{"help"}, icon: "?", color: ansiYellow,
+		args:        []string{"help"}, icon: "?", color: ansiYellow, shortcut: 'h',
 	},
 	{
 		label: "Quit", command: "q",
 		description: "Leave Brevitas and return to your shell.",
-		details:     []string{"No changes will be made"},
-		icon:        "×", color: ansiRed,
+		icon:        "×", color: ansiRed, shortcut: 'q',
 	},
 }
 
@@ -113,7 +105,7 @@ func homeMenuWithKeys(reader *bufio.Reader, out io.Writer, size func() (int, int
 	for {
 		width, height := size()
 		renderHomeMenu(out, cursor, width, height)
-		key, err := readTUIKey(reader)
+		key, shortcut, err := readHomeKey(reader)
 		if errors.Is(err, io.EOF) {
 			return nil, true, nil
 		}
@@ -130,11 +122,16 @@ func homeMenuWithKeys(reader *bufio.Reader, out io.Writer, size func() (int, int
 		case tuiKeyQuit, tuiKeyLeft, tuiKeyBack:
 			return nil, true, nil
 		}
+		if shortcut != 0 {
+			if action, ok := homeActionForShortcut(shortcut); ok {
+				return append([]string(nil), action.args...), true, nil
+			}
+		}
 	}
 }
 
 func renderHomeMenu(out io.Writer, cursor, width, height int) {
-	if width >= 76 && height >= 18 {
+	if width >= 52 && height >= 22 {
 		renderHomeMenuWide(out, cursor, width, height)
 		return
 	}
@@ -143,55 +140,49 @@ func renderHomeMenu(out io.Writer, cursor, width, height int) {
 
 func renderHomeMenuWide(out io.Writer, cursor, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s BREVITAS %s\x1b[K\r\n", ansiBold, ansiCyan, ansiReset)
-	fmt.Fprintf(out, "%sChoose what you want Brevitas to do%s\x1b[K\r\n", ansiDim, ansiReset)
-	fmt.Fprintf(out, "%s%s%s\r\n", ansiBlue, strings.Repeat("─", width), ansiReset)
-
-	leftWidth := width * 42 / 100
-	if leftWidth < 30 {
-		leftWidth = 30
+	selected := homeActions[cursor]
+	description := []string{}
+	if height >= 24 {
+		description = wrapTUIText(selected.description, minInt(64, width-4))
 	}
-	if leftWidth > 52 {
-		leftWidth = 52
+	usedHeight := 22 + len(description)
+	for row := 0; row < maxInt(0, (height-usedHeight)/2); row++ {
+		fmt.Fprint(out, "\r\n")
 	}
-	rightWidth := maxInt(20, width-leftWidth-3)
-	contentHeight := maxInt(10, height-5)
-	entryRows := contentHeight - 1
-	start := 0
-	if cursor >= entryRows {
-		start = cursor - entryRows + 1
-	}
-	end := minInt(len(homeActions), start+entryRows)
-	preview := homePreviewLines(homeActions[cursor], rightWidth, contentHeight-1)
-
-	for row := 0; row < contentHeight; row++ {
-		left, right := "", ""
-		if row == 0 {
-			left = ansiBold + ansiBlue + " ACTIONS" + ansiReset
-			right = ansiBold + ansiMagenta + " PREVIEW" + ansiReset
-		} else {
-			index := start + row - 1
-			if index < end {
-				left = formatHomeAction(homeActions[index], index == cursor, leftWidth-1)
-			}
-			previewIndex := row - 1
-			if previewIndex < len(preview) {
-				right = preview[previewIndex]
-			}
+	for index, line := range homeLogo {
+		color := ansiBlue
+		if index >= len(homeLogo)/2 {
+			color = ansiCyan
 		}
-		fmt.Fprint(out, left)
-		fmt.Fprintf(out, "\x1b[%dG%s│%s %s\x1b[K\r\n", leftWidth+1, ansiBlue, ansiReset, right)
+		writeHomeCentered(out, width, color+ansiBold+line+ansiReset, len([]rune(line)))
 	}
-	fmt.Fprintf(out, "%s%s%s\r\n", ansiBlue, strings.Repeat("─", width), ansiReset)
-	footer := "↑/↓ navigate  Enter/→ launch  ←/Backspace/q quit"
-	fmt.Fprintf(out, "%s%s%s\x1b[K", ansiDim, truncateText(footer, width-1), ansiReset)
+	writeHomeCentered(out, width, ansiPink+ansiBold+"BREVITAS"+ansiReset+ansiDim+"  Optimize every AI request."+ansiReset, 35)
+	writeHomeCentered(out, width, ansiBlue+ansiBold+"START HERE"+ansiReset, 10)
+
+	menuWidth := minInt(46, width-4)
+	for index, action := range homeActions {
+		if index == 2 {
+			writeHomeCentered(out, width, ansiBlue+ansiBold+"EXPLORE"+ansiReset, 7)
+		}
+		row := formatHomeAction(action, index == cursor, menuWidth)
+		writeHomeCentered(out, width, row, menuWidth)
+	}
+
+	fmt.Fprint(out, "\r\n")
+	writeHomeCentered(out, width, selected.color+ansiBold+selected.command+ansiReset, len([]rune(selected.command)))
+	for _, line := range description {
+		writeHomeCentered(out, width, ansiDim+line+ansiReset, len([]rune(line)))
+	}
+	fmt.Fprint(out, "\r\n")
+	footer := "↑/↓ navigate  Enter launch  shortcut keys shown at right  q quit"
+	writeHomeCenteredFinal(out, width, ansiDim+truncateText(footer, width-2)+ansiReset, minInt(len([]rune(footer)), width-2))
 }
 
 func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s BREVITAS %s\r\n", ansiBold, ansiCyan, ansiReset)
-	fmt.Fprintf(out, "%sChoose what you want Brevitas to do%s\r\n\r\n", ansiDim, ansiReset)
-	visible := maxInt(5, height-12)
+	fmt.Fprintf(out, "%s%s BVX %s  %sBrevitas home%s\r\n", ansiBold, ansiCyan, ansiReset, ansiDim, ansiReset)
+	fmt.Fprintf(out, "%sStart here: choose what you want to set up or inspect.%s\r\n\r\n", ansiDim, ansiReset)
+	visible := maxInt(4, height-9)
 	start := 0
 	if cursor >= visible {
 		start = cursor - visible + 1
@@ -203,35 +194,83 @@ func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 	for row := end - start; row < visible; row++ {
 		fmt.Fprint(out, "\r\n")
 	}
-	fmt.Fprintf(out, "\r\n%s%s%s\r\n", ansiMagenta+ansiBold, truncateText(homeActions[cursor].command, width-1), ansiReset)
+	fmt.Fprintf(out, "\r\n%s%s%s\r\n", homeActions[cursor].color+ansiBold, truncateText(homeActions[cursor].command, width-1), ansiReset)
 	fmt.Fprintf(out, "%s%s%s\r\n", ansiDim, truncateText(homeActions[cursor].description, width-1), ansiReset)
-	fmt.Fprintf(out, "\r\n%s↑/↓ navigate  Enter launch  q quit%s", ansiDim, ansiReset)
+	fmt.Fprintf(out, "\r\n%s↑/↓ navigate  Enter launch  press a shortcut to launch  q quit%s", ansiDim, ansiReset)
 }
 
 func formatHomeAction(action homeAction, selected bool, width int) string {
+	if width < 12 {
+		return truncateText(action.label, width)
+	}
 	prefix, style := "  ", ""
 	if selected {
-		prefix, style = "> ", ansiSelect
+		prefix, style = "› ", ansiSelect
 	}
-	label := truncateText(action.label, maxInt(10, width-7))
-	return fmt.Sprintf("%s%s%s%s %s%s", style, prefix, action.color, action.icon, label, ansiReset)
+	labelWidth := maxInt(4, width-8)
+	label := truncateText(action.label, labelWidth)
+	return fmt.Sprintf("%s%s%s%s %-*s %s[%c]%s", style, prefix, action.color, action.icon, labelWidth, label, ansiOrange, action.shortcut, ansiReset)
 }
 
-func homePreviewLines(action homeAction, width, height int) []string {
-	lines := []string{
-		action.color + action.icon + " " + truncateText(action.label, maxInt(1, width-3)) + ansiReset,
-		ansiCyan + ansiBold + truncateText(action.command, width) + ansiReset,
-		"",
+func writeHomeCentered(out io.Writer, width int, value string, visibleWidth int) {
+	column := maxInt(1, (width-visibleWidth)/2+1)
+	fmt.Fprintf(out, "\x1b[%dG%s\x1b[K\r\n", column, value)
+}
+
+func writeHomeCenteredFinal(out io.Writer, width int, value string, visibleWidth int) {
+	column := maxInt(1, (width-visibleWidth)/2+1)
+	fmt.Fprintf(out, "\x1b[%dG%s\x1b[K", column, value)
+}
+
+func homeActionForShortcut(shortcut rune) (homeAction, bool) {
+	shortcut = unicode.ToLower(shortcut)
+	for _, action := range homeActions {
+		if action.shortcut == shortcut {
+			return action, true
+		}
 	}
-	lines = append(lines, wrapTUIText(action.description, width)...)
-	lines = append(lines, "", ansiBold+" WHAT HAPPENS"+ansiReset)
-	for _, detail := range action.details {
-		lines = append(lines, ansiGreen+"✓ "+ansiReset+truncateText(detail, maxInt(1, width-2)))
+	return homeAction{}, false
+}
+
+func readHomeKey(reader *bufio.Reader) (tuiKey, rune, error) {
+	b, err := reader.ReadByte()
+	if err != nil {
+		return tuiKeyUnknown, 0, err
 	}
-	if len(lines) > height {
-		lines = lines[:height]
+	switch b {
+	case '\r', '\n':
+		return tuiKeyEnter, 0, nil
+	case 3:
+		return tuiKeyQuit, 0, nil
+	case 8, 127:
+		return tuiKeyBack, 0, nil
+	case 27:
+		second, secondErr := reader.ReadByte()
+		if secondErr != nil {
+			return tuiKeyUnknown, 0, secondErr
+		}
+		if second != '[' && second != 'O' {
+			return tuiKeyUnknown, 0, nil
+		}
+		third, thirdErr := reader.ReadByte()
+		if thirdErr != nil {
+			return tuiKeyUnknown, 0, thirdErr
+		}
+		switch third {
+		case 'A':
+			return tuiKeyUp, 0, nil
+		case 'B':
+			return tuiKeyDown, 0, nil
+		case 'C':
+			return tuiKeyRight, 0, nil
+		case 'D':
+			return tuiKeyLeft, 0, nil
+		}
 	}
-	return lines
+	if unicode.IsLetter(rune(b)) {
+		return tuiKeyUnknown, unicode.ToLower(rune(b)), nil
+	}
+	return tuiKeyUnknown, 0, nil
 }
 
 func wrapTUIText(value string, width int) []string {
@@ -250,11 +289,11 @@ func wrapTUIText(value string, width int) []string {
 			line += " " + word
 			continue
 		}
-		lines = append(lines, ansiDim+line+ansiReset)
+		lines = append(lines, line)
 		line = word
 	}
 	if line != "" {
-		lines = append(lines, ansiDim+line+ansiReset)
+		lines = append(lines, line)
 	}
 	return lines
 }
