@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
@@ -24,6 +25,16 @@ func optimizerKeyID(apiKey string) string {
 	}
 	sum := sha256.Sum256([]byte(apiKey))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+// optimizerTenantKeyID prevents exact/semantic responses from ever crossing
+// Company A's end-customer boundary while retaining the organization key as
+// the outer tenant namespace.
+func optimizerTenantKeyID(apiKey, customerID string) string {
+	if customerID == "" {
+		return optimizerKeyID(apiKey)
+	}
+	return optimizerKeyID(apiKey + "\x00" + customerID)
 }
 
 // handle is the main request handler. It reads the body, asks brevitas-systems
@@ -56,6 +67,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	upstreamBase, ok := s.cfg.Upstreams[string(rt.Family)]
 	if !ok || upstreamBase == "" {
 		s.writeError(w, http.StatusBadGateway, "brevitas: no upstream configured for %s", rt.Family)
+		return
+	}
+	customerID, err := customerAttribution(r)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "brevitas: %v", err)
 		return
 	}
 	s.stats.markRequest()
@@ -93,7 +109,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			Path:     r.URL.Path,
 			Headers:  flattenHeaders(r.Header),
 			Body:     json.RawMessage(body),
-			KeyID:    optimizerKeyID(apiKey),
+			KeyID:    optimizerTenantKeyID(apiKey, customerID),
 		}
 		optCtx, cancel := context.WithTimeout(ctx, s.cfg.Optimizer.CallTimeout)
 		resp, oerr := s.opt.Optimize(optCtx, optReq)
@@ -164,7 +180,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			record = &optimizer.RecordRequest{
 				Provider: string(rt.Family),
 				Model:    meta.Model,
-				KeyID:    optimizerKeyID(apiKey),
+				KeyID:    optimizerTenantKeyID(apiKey, customerID),
 				Headers:  flattenHeaders(r.Header),
 				Body:     json.RawMessage(body),
 			}
@@ -187,7 +203,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			if s.opt != nil && !usage.empty() {
 				record := &optimizer.RecordRequest{
 					Provider: string(rt.Family), Model: meta.Model,
-					KeyID: optimizerKeyID(apiKey), Headers: flattenHeaders(r.Header),
+					KeyID: optimizerTenantKeyID(apiKey, customerID), Headers: flattenHeaders(r.Header),
 					Body: json.RawMessage(body), Usage: usage.optimizerReceipt(rt.Family),
 				}
 				go func() {
@@ -235,13 +251,21 @@ func (s *Server) forward(
 		}
 		copyRequestHeaders(req.Header, orig.Header)
 		for k, v := range optHeaders {
+			if strings.HasPrefix(strings.ToLower(k), "x-brevitas-") {
+				continue
+			}
 			req.Header.Set(k, v)
 		}
 		// Default is passthrough: the tool's own provider credentials (copied
-		// above) reach the provider untouched. Only a Brevitas *gateway*
-		// upstream needs the single stored key injected.
+		// above) reach the provider untouched. Gateway mode adds the separate
+		// Brevitas credential without overwriting provider authentication.
 		if s.cfg.Proxy.UpstreamAuth == "inject" {
 			applyGatewayAuth(req, rt.Family, apiKey)
+			// Internal customer attribution goes only to the Brevitas gateway,
+			// never directly to OpenAI/Anthropic/Google.
+			if customerID, _ := customerAttribution(orig); customerID != "" {
+				req.Header.Set("X-Brevitas-Customer-ID", customerID)
+			}
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.ContentLength = int64(len(body))

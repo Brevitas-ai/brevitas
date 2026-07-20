@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,6 +57,7 @@ func newCloudReport(r *http.Request, family Family, model string,
 		Environment: defaultLabel(first(label(r, "X-Brevitas-Environment"), labelValue(os.Getenv("BREVITAS_ENVIRONMENT"))), "local"),
 		Source:      source, Repo: repo, Client: client, Gateway: "bvx",
 		ReceiptSource: "proxy", IsStream: stream, CacheAttributable: cacheAttributable,
+		CustomerID: customerIDOrEmpty(r),
 	}
 	if savings != nil {
 		report.BaselineTokens = int64(savings.TokensBefore)
@@ -69,6 +71,33 @@ func newCloudReport(r *http.Request, family Family, model string,
 		report.QualityScore = &quality
 	}
 	return report
+}
+
+// customerAttribution accepts only an opaque, header-safe identifier. It does
+// not infer identity from repository contents, paths, prompts, or provider
+// credentials. The Brevitas backend still owns authorization: it binds this ID
+// to the organization derived from the authenticated service key.
+func customerAttribution(r *http.Request) (string, error) {
+	value := strings.TrimSpace(r.Header.Get("X-Brevitas-Customer-ID"))
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > 200 {
+		return "", fmt.Errorf("X-Brevitas-Customer-ID exceeds 200 bytes")
+	}
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' || ch == ':' {
+			continue
+		}
+		return "", fmt.Errorf("X-Brevitas-Customer-ID must be an opaque ASCII identifier")
+	}
+	return value, nil
+}
+
+func customerIDOrEmpty(r *http.Request) string {
+	value, _ := customerAttribution(r)
+	return value
 }
 
 func reportWithUsage(report cloud.UsageReport, usage usage) cloud.UsageReport {

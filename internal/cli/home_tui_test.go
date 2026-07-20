@@ -21,12 +21,31 @@ func TestHomeMenuLaunchesSelectedActionWithArrowKeys(t *testing.T) {
 		t.Fatalf("selection = %q, handled=%v", args, handled)
 	}
 	for _, expected := range []string{
-		"██████╗", "BREVITAS", "START HERE", "EXPLORE", "Configure AI tools", "[a]",
-		"↑/↓ navigate", ansiSelect,
+		"ACTIONS", "SELECTED ACTION", "Configure AI tools", "READY TO LAUNCH", "[a]",
+		"↑/↓ navigate", "╭", "╯", "██████╗", ansiBrandBlue, ansiSelect,
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("TUI output missing %q", expected)
 		}
+	}
+}
+
+func TestWideHomeUsesAvailableTerminalSpace(t *testing.T) {
+	var output bytes.Buffer
+	renderHomeMenu(&output, 0, 100, 30)
+
+	if got := strings.Count(output.String(), "\r\n"); got != 24 {
+		t.Fatalf("wide home rendered %d completed rows, want 24", got)
+	}
+	for _, expected := range []string{
+		"Connect repository", "bvx install repo", "Browse to a codebase", "Press", "Enter", "[r]",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("wide home missing %q", expected)
+		}
+	}
+	if strings.Contains(output.String(), "Optimize every AI request") || strings.Contains(output.String(), "command center") {
+		t.Fatal("wide home still contains the removed tagline")
 	}
 }
 
@@ -105,15 +124,109 @@ func TestHomeMenuArrowNavigationWraps(t *testing.T) {
 	}
 }
 
+func TestHomeMenuBackKeyKeepsDashboardOpen(t *testing.T) {
+	var output bytes.Buffer
+	args, handled, err := homeMenuWithKeys(
+		bufio.NewReader(strings.NewReader("\x1b[D\x1b[B\r")),
+		&output,
+		func() (int, int) { return 100, 30 },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !handled || strings.Join(args, " ") != "install ai" {
+		t.Fatalf("selection after Back = %q, handled=%v", args, handled)
+	}
+}
+
+func TestWaitForHomeKey(t *testing.T) {
+	tests := []struct {
+		name string
+		keys string
+		back bool
+	}{
+		{name: "enter", keys: "\r", back: true},
+		{name: "back shortcut", keys: "b", back: true},
+		{name: "home shortcut", keys: "h", back: true},
+		{name: "left arrow", keys: "\x1b[D", back: true},
+		{name: "backspace", keys: "\x7f", back: true},
+		{name: "quit", keys: "q", back: false},
+		{name: "control c", keys: "\x03", back: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			back, err := waitForHomeKey(bufio.NewReader(strings.NewReader(test.keys)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if back != test.back {
+				t.Fatalf("back = %v, want %v", back, test.back)
+			}
+		})
+	}
+}
+
+func TestHomeActionStartsOnCleanScreen(t *testing.T) {
+	var output bytes.Buffer
+	renderHomeActionScreen(&output)
+	if got, want := output.String(), "\x1b[H\x1b[2J"; got != want {
+		t.Fatalf("action screen reset = %q, want %q", got, want)
+	}
+}
+
+func TestParseHomeCommandLine(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "status", want: "status"},
+		{input: "bvx status", want: "status"},
+		{input: "BVX install '/tmp/My Project' --apply", want: "install|/tmp/My Project|--apply"},
+		{input: `config set-port 9000`, want: "config|set-port|9000"},
+		{input: "", want: ""},
+	}
+	for _, test := range tests {
+		args, err := parseHomeCommandLine(test.input)
+		if err != nil {
+			t.Fatalf("parse %q: %v", test.input, err)
+		}
+		if got := strings.Join(args, "|"); got != test.want {
+			t.Fatalf("parse %q = %q, want %q", test.input, got, test.want)
+		}
+	}
+	for _, input := range []string{`status \`, `install "unfinished`} {
+		if _, err := parseHomeCommandLine(input); err == nil {
+			t.Fatalf("parse %q unexpectedly succeeded", input)
+		}
+	}
+}
+
+func TestCommandReferencePromptAcceptsOptionalBVXPrefix(t *testing.T) {
+	var output bytes.Buffer
+	app := &App{In: strings.NewReader("bvx status\n"), Out: &output}
+	args, quit, err := app.promptHomeCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quit || strings.Join(args, " ") != "status" {
+		t.Fatalf("prompt returned args=%q, quit=%v", args, quit)
+	}
+	for _, expected := range []string{"RUN A COMMAND", "bvx ›", "Blank Enter returns Home"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("command prompt missing %q", expected)
+		}
+	}
+}
+
 func TestNarrowHomeExplainsHowToStart(t *testing.T) {
 	var output bytes.Buffer
 	renderHomeMenu(&output, 0, 50, 20)
-	for _, expected := range []string{"BVX", "Brevitas home", "Start here", "[r]", "bvx install repo"} {
+	for _, expected := range []string{"brevitas", "home", "Start here", "[r]", "bvx install repo"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("narrow home missing %q: %q", expected, output.String())
 		}
 	}
-	if strings.Contains(output.String(), "██████╗") {
+	if strings.Contains(output.String(), ansiBrandBlue) {
 		t.Fatal("narrow home unexpectedly rendered the large logo")
 	}
 }

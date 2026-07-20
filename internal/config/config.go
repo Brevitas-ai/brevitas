@@ -4,6 +4,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,8 +37,32 @@ type Config struct {
 	// EnabledProviders lists provider names the user has configured.
 	EnabledProviders []string `json:"enabled_providers"`
 
+	// Inventory contains only pseudonymous device and installation metadata.
+	// Credentials remain exclusively in the OS keyring; repository paths,
+	// remotes, source, prompts, and provider keys are never persisted here.
+	Inventory InventoryConfig `json:"inventory"`
+
 	// UpdatedAt records the last time the config was written.
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// InventoryConfig is the local, non-secret state needed to make AgentMap
+// installations idempotent and send periodic presence heartbeats.
+type InventoryConfig struct {
+	DeviceID      string               `json:"device_id"`
+	Installations []InstallationConfig `json:"installations,omitempty"`
+}
+
+// InstallationConfig identifies one repository/environment pair without
+// retaining its absolute path or Git remote.
+type InstallationConfig struct {
+	ID                    string    `json:"id"`
+	RepositoryID          string    `json:"repository_id"`
+	RepositoryLabel       string    `json:"repository_label"`
+	Environment           string    `json:"environment"`
+	Registered            bool      `json:"registered"`
+	HeartbeatIntervalSecs int       `json:"heartbeat_interval_seconds,omitempty"`
+	LastHeartbeatAt       time.Time `json:"last_heartbeat_at,omitempty"`
 }
 
 // ProxyConfig configures the local HTTP proxy.
@@ -51,8 +77,8 @@ type ProxyConfig struct {
 	// UpstreamAuth controls how the proxy authenticates to the upstream:
 	//   "passthrough" (default) — forward the tool's own provider credentials
 	//                             unchanged; Brevitas only optimizes.
-	//   "inject"                — replace credentials with the stored Brevitas
-	//                             key (only for a Brevitas gateway upstream).
+	//   "inject"                — add the stored Brevitas key as X-Brevitas-Key
+	//                             while preserving provider authentication.
 	UpstreamAuth string `json:"upstream_auth"`
 }
 
@@ -203,4 +229,19 @@ func (c *Config) RemoveProvider(name string) {
 		}
 	}
 	c.EnabledProviders = out
+}
+
+// EnsureDeviceID returns a stable, random, pseudonymous device identifier.
+// It deliberately does not derive identity from hostname, username, hardware,
+// network interfaces, or any other machine fingerprint.
+func (c *Config) EnsureDeviceID() (string, error) {
+	if c.Inventory.DeviceID != "" {
+		return c.Inventory.DeviceID, nil
+	}
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("generate device id: %w", err)
+	}
+	c.Inventory.DeviceID = "dev_" + hex.EncodeToString(raw[:])
+	return c.Inventory.DeviceID, nil
 }

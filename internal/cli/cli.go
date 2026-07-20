@@ -42,6 +42,7 @@ type command struct {
 // commands is the full command table, in display order.
 var commands = []command{
 	{"install", "Configure AI tools or choose a codebase (`install repo`)", (*App).cmdInstall},
+	{"onboard", "Scan a company backend and import existing customers safely", (*App).cmdOnboard},
 	{"uninstall", "Restore all tool configs and remove the background service", (*App).cmdUninstall},
 	{"status", "Show proxy, service, and provider status", (*App).cmdStatus},
 	{"stats", "Show cumulative token-savings metrics from the proxy", (*App).cmdStats},
@@ -91,19 +92,7 @@ func Main() int {
 // Run dispatches a single invocation and returns a process exit code.
 func (a *App) Run(ctx context.Context, args []string) int {
 	if len(args) == 0 {
-		selected, handled, err := a.chooseHomeAction()
-		if err != nil {
-			fmt.Fprintf(a.Err, "bvx: command center: %v\n", err)
-			return 1
-		}
-		if handled {
-			if len(selected) == 0 {
-				return 0
-			}
-			return a.Run(ctx, selected)
-		}
-		a.home()
-		return 0
+		return a.runHomeDashboard(ctx)
 	}
 	if args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
 		a.usage()
@@ -132,6 +121,53 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	}
 	a.usage()
 	return 2
+}
+
+func (a *App) runHomeDashboard(ctx context.Context) int {
+	for {
+		selected, handled, err := a.chooseHomeAction()
+		if err != nil {
+			fmt.Fprintf(a.Err, "bvx: command center: %v\n", err)
+			return 1
+		}
+		if !handled {
+			a.home()
+			return 0
+		}
+		if len(selected) == 0 {
+			return 0
+		}
+
+		renderHomeActionScreen(a.Out)
+		_ = a.Run(ctx, selected)
+		if isHomeCommandReference(selected) {
+			commandArgs, quit, promptErr := a.promptHomeCommand()
+			if promptErr != nil {
+				fmt.Fprintf(a.Err, "bvx: command prompt: %v\n", promptErr)
+				return 1
+			}
+			if quit {
+				return 0
+			}
+			if len(commandArgs) == 0 {
+				continue
+			}
+			renderHomeActionScreen(a.Out)
+			_ = a.Run(ctx, commandArgs)
+		}
+		back, waitErr := a.waitForHome()
+		if waitErr != nil {
+			fmt.Fprintf(a.Err, "bvx: return home: %v\n", waitErr)
+			return 1
+		}
+		if !back {
+			return 0
+		}
+	}
+}
+
+func isHomeCommandReference(args []string) bool {
+	return len(args) == 1 && args[0] == "help"
 }
 
 func (a *App) usage() {

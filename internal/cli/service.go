@@ -265,6 +265,7 @@ func (a *App) cmdServe(ctx context.Context, _ []string) error {
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go a.runInventoryHeartbeats(ctx, logger)
 
 	logger.Info("Brevitas proxy starting", "addr", a.Cfg.Addr())
 	if err := srv.ListenAndServe(ctx); err != nil {

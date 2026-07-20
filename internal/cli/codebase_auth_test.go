@@ -22,8 +22,18 @@ func TestInstallCodebaseAuthenticatesScansAndRegistersRepository(t *testing.T) {
 	}
 
 	var registered struct {
-		Repo   string `json:"repo"`
-		Source string `json:"source"`
+		InstallationID string `json:"installation_id"`
+		Device         struct {
+			ID string `json:"id"`
+		} `json:"device"`
+		Repository struct {
+			ID    string `json:"id"`
+			Label string `json:"label"`
+		} `json:"repository"`
+		Environment string `json:"environment"`
+		Client      struct {
+			Name string `json:"name"`
+		} `json:"client"`
 	}
 	var registeredKey string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,10 +47,13 @@ func TestInstallCodebaseAuthenticatesScansAndRegistersRepository(t *testing.T) {
 			})
 		case "/v1/device-auth/token":
 			_ = json.NewEncoder(w).Encode(map[string]string{"api_key": "bvt_repo_install"})
-		case "/v1/repositories":
+		case "/v1/installations":
 			registeredKey = r.Header.Get("X-Brevitas-Key")
 			_ = json.NewDecoder(r.Body).Decode(&registered)
-			_ = json.NewEncoder(w).Encode(map[string]bool{"registered": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"installation_id":            registered.InstallationID,
+				"heartbeat_interval_seconds": 300,
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -88,8 +101,13 @@ func TestInstallCodebaseAuthenticatesScansAndRegistersRepository(t *testing.T) {
 	if registeredKey != "bvt_repo_install" {
 		t.Fatalf("registered with key %q", registeredKey)
 	}
-	if registered.Repo != "checkout-service" || registered.Source != "bvx" {
+	if registered.Repository.Label != "checkout-service" || registered.Repository.ID == "" ||
+		registered.InstallationID == "" || registered.Device.ID == "" ||
+		registered.Environment != "local" || registered.Client.Name != "bvx" {
 		t.Fatalf("repository registration = %#v", registered)
+	}
+	if strings.Contains(registered.Repository.Label, temp) || strings.Contains(registered.Repository.Label, "/") {
+		t.Fatalf("registration leaked an absolute path: %#v", registered)
 	}
 
 	scanArgs, err := os.ReadFile(argsFile)

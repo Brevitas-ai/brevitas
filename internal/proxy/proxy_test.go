@@ -20,14 +20,17 @@ import (
 
 // fakeOptimizer rewrites the model to prove the optimize hook is applied.
 type fakeOptimizer struct {
-	called   bool
-	fail     bool
-	cacheHit []byte // when non-nil, Optimize returns a cache hit with this body
-	recorded chan *optimizer.RecordRequest
+	called    bool
+	fail      bool
+	cacheHit  []byte // when non-nil, Optimize returns a cache hit with this body
+	recorded  chan *optimizer.RecordRequest
+	lastKeyID string
+	headers   map[string]string
 }
 
 func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*optimizer.Response, error) {
 	f.called = true
+	f.lastKeyID = req.KeyID
 	if f.fail {
 		return nil, io.ErrUnexpectedEOF
 	}
@@ -38,7 +41,7 @@ func (f *fakeOptimizer) Optimize(_ context.Context, req *optimizer.Request) (*op
 	_ = json.Unmarshal(req.Body, &body)
 	body["model"] = "optimized-model"
 	out, _ := json.Marshal(body)
-	return &optimizer.Response{Body: out, Applied: []string{"remodel"}}, nil
+	return &optimizer.Response{Body: out, Applied: []string{"remodel"}, Headers: f.headers}, nil
 }
 func (f *fakeOptimizer) Health(context.Context) error            { return nil }
 func (f *fakeOptimizer) Version(context.Context) (string, error) { return "test", nil }
@@ -75,8 +78,9 @@ func TestProxyReportsTenantScopedCloudReceipt(t *testing.T) {
 	defer upstream.Close()
 	cfg := config.Default()
 	cfg.Upstreams["openai"] = upstream.URL
+	opt := &fakeOptimizer{}
 	srv := New(Options{
-		Config: cfg, Optimizer: &fakeOptimizer{},
+		Config: cfg, Optimizer: opt,
 		APIKey: func(context.Context) (string, error) { return "bvt_customer", nil },
 		ReportUsage: func(_ context.Context, key string, report cloud.UsageReport) error {
 			reports <- captured{key, report}
@@ -90,16 +94,20 @@ func TestProxyReportsTenantScopedCloudReceipt(t *testing.T) {
 		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"private prompt"}]}`))
 	req.Header.Set("X-Brevitas-Project", "billing-app")
 	req.Header.Set("X-Brevitas-Client", "codex")
+	req.Header.Set("X-Brevitas-Customer-ID", "cust_finance_01")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
+	if opt.lastKeyID != optimizerTenantKeyID("bvt_customer", "cust_finance_01") {
+		t.Fatalf("optimizer cache was not customer scoped: %q", opt.lastKeyID)
+	}
 
 	select {
 	case got := <-reports:
-		if got.key != "bvt_customer" || got.report.Project != "billing-app" || got.report.Repo != "billing-app" || got.report.Client != "codex" {
+		if got.key != "bvt_customer" || got.report.Project != "billing-app" || got.report.Repo != "billing-app" || got.report.Client != "codex" || got.report.CustomerID != "cust_finance_01" {
 			t.Fatalf("wrong tenant labels: %#v", got)
 		}
 		if got.report.FreshInputTokens != 15 || got.report.CachedInputTokens != 5 || got.report.OutputTokens != 2 {
@@ -111,6 +119,40 @@ func TestProxyReportsTenantScopedCloudReceipt(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("cloud receipt was not reported")
+	}
+}
+
+func TestCustomerAttributionValidationAndCacheIsolation(t *testing.T) {
+	valid := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	valid.Header.Set("X-Brevitas-Customer-ID", "customer:finance-01")
+	if got, err := customerAttribution(valid); err != nil || got != "customer:finance-01" {
+		t.Fatalf("valid customer id = %q, %v", got, err)
+	}
+	for _, value := range []string{"customer with spaces", "../../customer", strings.Repeat("x", 201)} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		req.Header.Set("X-Brevitas-Customer-ID", value)
+		if _, err := customerAttribution(req); err == nil {
+			t.Errorf("accepted unsafe customer id %q", value)
+		}
+	}
+	org := optimizerTenantKeyID("bvt_org", "")
+	first := optimizerTenantKeyID("bvt_org", "customer_1")
+	second := optimizerTenantKeyID("bvt_org", "customer_2")
+	if org == first || first == second {
+		t.Fatalf("cache namespaces crossed: org=%q first=%q second=%q", org, first, second)
+	}
+}
+
+func TestInvalidCustomerAttributionIsRejectedBeforeUpstream(t *testing.T) {
+	cfg := config.Default()
+	cfg.Upstreams["openai"] = "http://127.0.0.1:1"
+	srv := New(Options{Config: cfg, Optimizer: &fakeOptimizer{}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
+	req.Header.Set("X-Brevitas-Customer-ID", "not a safe id")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
@@ -176,8 +218,12 @@ func TestProxyReportsStreamingCloudReceipt(t *testing.T) {
 func TestProxyOptimizesAndForwards(t *testing.T) {
 	var gotBody map[string]any
 	var gotAuth string
+	var gotCustomer string
+	var gotInternal string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
+		gotCustomer = r.Header.Get("X-Brevitas-Customer-ID")
+		gotInternal = r.Header.Get("X-Brevitas-Injected")
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
@@ -185,7 +231,7 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	opt := &fakeOptimizer{}
+	opt := &fakeOptimizer{headers: map[string]string{"X-Brevitas-Injected": "must-not-leak"}}
 	ts := newTestServer(t, upstream.URL, opt)
 	defer ts.Close()
 
@@ -193,6 +239,7 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 		strings.NewReader(`{"model":"gpt-4o","stream":false}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer sk-user-real") // the tool's own key
+	req.Header.Set("X-Brevitas-Customer-ID", "cust_internal_1")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -212,6 +259,43 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 	// unchanged — Brevitas must not substitute its own key.
 	if gotAuth != "Bearer sk-user-real" {
 		t.Errorf("upstream auth = %q, want passthrough of the tool's key", gotAuth)
+	}
+	if gotCustomer != "" {
+		t.Errorf("customer identity leaked to provider upstream: %q", gotCustomer)
+	}
+	if gotInternal != "" {
+		t.Errorf("optimizer internal header leaked to provider upstream: %q", gotInternal)
+	}
+}
+
+func TestGatewayReceivesCustomerAttribution(t *testing.T) {
+	var gotCustomer, gotAuth, gotBrevitasKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCustomer = r.Header.Get("X-Brevitas-Customer-ID")
+		gotAuth = r.Header.Get("Authorization")
+		gotBrevitasKey = r.Header.Get("X-Brevitas-Key")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer upstream.Close()
+	cfg := config.Default()
+	cfg.Proxy.UpstreamAuth = "inject"
+	cfg.Upstreams["openai"] = upstream.URL
+	srv := New(Options{
+		Config: cfg, Optimizer: &fakeOptimizer{},
+		APIKey: func(context.Context) (string, error) { return "bvt_org_gateway", nil },
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
+	req.Header.Set("X-Brevitas-Customer-ID", "cust_finance_01")
+	req.Header.Set("Authorization", "Bearer provider-real")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if gotCustomer != "cust_finance_01" || gotAuth != "Bearer provider-real" || gotBrevitasKey != "bvt_org_gateway" {
+		t.Fatalf("gateway headers: customer=%q auth=%q brevitas=%q", gotCustomer, gotAuth, gotBrevitasKey)
 	}
 }
 

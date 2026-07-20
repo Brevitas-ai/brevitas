@@ -75,6 +75,7 @@ bvx install repo --apply           # choose a folder and route it through Brevit
 bvx install ./my-project           # scan a known path + open the AI-call map
 bvx install ./my-project --apply   # also route the codebase through Brevitas
 bvx install ./my-project --apply --auto  # also rewrite hardcoded provider URLs
+bvx install ./my-project --environment production  # label inventory environment
 ```
 
 On first use, BVX opens the dashboard to create and approve a device API key,
@@ -229,6 +230,40 @@ and stats simply show 0 saved.
 
 Cloud receipts contain only numeric token/cost categories and short labels. They
 never contain prompts, responses, code, absolute paths, Git remotes, or provider keys.
+
+### Attributing an enterprise application's end customers
+
+Install BVX once on the organization's backend; do not give each end customer a
+BVX key. After authenticating an end customer, application middleware adds its
+opaque internal ID to each proxied AI request:
+
+```http
+X-Brevitas-Customer-ID: cust_7fd12a9e
+```
+
+This ID scopes usage and caches inside the organization. BVX never infers it
+from source or AgentMap. The internal header is removed before direct provider
+calls and is forwarded only to a configured Brevitas gateway. See
+[`docs/INVENTORY.md`](docs/INVENTORY.md) for the safe inventory and API contract.
+
+### Onboard an existing customer database
+
+`bvx onboard` combines the AgentMap codebase scan with a safe customer-import wizard:
+
+```bash
+bvx onboard --customers ./customer-export.json --apply /srv/company-backend
+```
+
+Without flags it asks for the backend codebase and a past-customer database export. It supports
+CSV/TSV/semicolon files, JSON arrays or wrappers, JSONL/NDJSON, nested fields, and keyed JSON
+maps. Customer-specific fields such as `external_id`, `customerId`, `userId`, and `account_id`
+are detected automatically. Generic `id`/`uuid` fields and ambiguous records are rejected until
+the business selects the exact identity with `--id-field legacy.primary_key`.
+
+The command previews and validates everything before `--apply`. Only the exact stable ID is
+uploaded by default. A display label is opt-in with `--name-field business.label`; every other
+column remains local. Do not select an email address or other personal data as the label. New
+customers continue to appear automatically on first traffic through `X-Brevitas-Customer-ID`.
 
 ## How it works
 

@@ -47,7 +47,12 @@ func (a *App) cmdLogin(ctx context.Context, args []string) error {
 }
 
 func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
-	auth, err := cloud.StartDeviceAuthorization(ctx)
+	deviceID, err := a.ensureDeviceIdentity()
+	if err != nil {
+		return fmt.Errorf("prepare device identity: %w", err)
+	}
+	device := cloud.Device(deviceID)
+	auth, err := cloud.StartDeviceAuthorizationFor(ctx, device)
 	if err != nil {
 		return fmt.Errorf("start browser login: %w", err)
 	}
@@ -73,7 +78,7 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		key, pending, err := cloud.PollDeviceAuthorization(loginCtx, auth.DeviceCode)
+		key, pending, err := cloud.PollDeviceAuthorizationFor(loginCtx, auth.DeviceCode, device)
 		if err != nil {
 			return fmt.Errorf("finish browser login: %w", err)
 		}
@@ -86,6 +91,17 @@ func (a *App) loginWithBrowser(ctx context.Context, shouldOpen bool) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (a *App) ensureDeviceIdentity() (string, error) {
+	id, err := a.Cfg.EnsureDeviceID()
+	if err != nil {
+		return "", err
+	}
+	if err := a.saveInventoryConfig(); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (a *App) storeAPIKey(ctx context.Context, key string) error {

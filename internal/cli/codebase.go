@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/Brevitas-ai/brevitas/internal/cloud"
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
@@ -31,6 +30,7 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	apiKeyFlag := fs.String("api-key", "", "Brevitas API key (for CI; otherwise browser login)")
 	noOpen := fs.Bool("no-open", false, "do not open the HTML report in a browser")
 	target := fs.String("target", a.Cfg.ProxyURL(), "gateway URL to route calls through")
+	environment := fs.String("environment", os.Getenv("BREVITAS_ENVIRONMENT"), "deployment environment label (for inventory)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	}
 	if key, keyErr := a.apiKeyFunc()(ctx); keyErr != nil {
 		a.warn("Could not register this repository in the dashboard: %v", keyErr)
-	} else if registerErr := cloud.RegisterRepository(ctx, key, filepath.Base(abs)); registerErr != nil {
+	} else if registerErr := a.registerCodebaseInstallation(ctx, key, abs, *environment); registerErr != nil {
 		a.warn("Repository scanned, but dashboard registration is unavailable: %v", registerErr)
 	} else {
 		a.ok("Repository connected to your Brevitas dashboard")

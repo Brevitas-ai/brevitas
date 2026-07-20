@@ -54,18 +54,17 @@ func TestUpstreamURL(t *testing.T) {
 
 func TestApplyGatewayAuth(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "http://x", nil)
+	req.Header.Set("Authorization", "Bearer provider-openai")
 	applyGatewayAuth(req, FamilyOpenAI, "sk-1")
-	if req.Header.Get("Authorization") != "Bearer sk-1" {
+	if req.Header.Get("X-Brevitas-Key") != "sk-1" || req.Header.Get("Authorization") != "Bearer provider-openai" {
 		t.Errorf("openai auth = %q", req.Header.Get("Authorization"))
 	}
 
 	req2, _ := http.NewRequest(http.MethodPost, "http://x", nil)
+	req2.Header.Set("x-api-key", "provider-anthropic")
 	applyGatewayAuth(req2, FamilyAnthropic, "sk-2")
-	if req2.Header.Get("x-api-key") != "sk-2" {
+	if req2.Header.Get("X-Brevitas-Key") != "sk-2" || req2.Header.Get("x-api-key") != "provider-anthropic" {
 		t.Errorf("anthropic auth = %q", req2.Header.Get("x-api-key"))
-	}
-	if req2.Header.Get("anthropic-version") == "" {
-		t.Error("anthropic-version not defaulted")
 	}
 }
 

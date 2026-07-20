@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,26 @@ func TestDefaultConfig(t *testing.T) {
 		if c.Upstreams[fam] == "" {
 			t.Errorf("missing upstream for %s", fam)
 		}
+	}
+}
+
+func TestDeviceIDIsRandomStableAndPseudonymous(t *testing.T) {
+	first := Default()
+	id, err := first.EnsureDeviceID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := first.EnsureDeviceID()
+	if err != nil || again != id {
+		t.Fatalf("device id changed: %q -> %q (%v)", id, again, err)
+	}
+	second := Default()
+	other, err := second.EnsureDeviceID()
+	if err != nil || other == id {
+		t.Fatalf("device ids are not independently random: %q %q (%v)", id, other, err)
+	}
+	if !strings.HasPrefix(id, "dev_") || len(id) != len("dev_")+32 {
+		t.Fatalf("unexpected device id shape: %q", id)
 	}
 }
 

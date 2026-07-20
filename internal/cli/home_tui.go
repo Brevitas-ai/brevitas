@@ -100,6 +100,136 @@ func (a *App) chooseHomeAction() (args []string, handled bool, err error) {
 	return homeMenuWithKeys(bufio.NewReader(in), out, size)
 }
 
+// waitForHome keeps interactive dashboard sessions alive after an action has
+// finished, while leaving direct commands such as `bvx status` non-interactive.
+func (a *App) waitForHome() (back bool, err error) {
+	in, inOK := a.In.(*os.File)
+	out, outOK := a.Out.(*os.File)
+	if !inOK || !outOK || !canUseArrowNavigator(in, out) {
+		return false, nil
+	}
+
+	fmt.Fprintf(out, "\n%s  [ Enter ]  Back to Home     [ q ]  Quit%s", ansiBold+ansiCyan, ansiReset)
+	state, err := term.MakeRaw(int(in.Fd()))
+	if err != nil {
+		return false, fmt.Errorf("enable return-home input: %w", err)
+	}
+	defer func() {
+		_ = term.Restore(int(in.Fd()), state)
+		fmt.Fprint(out, ansiReset+"\r\n")
+	}()
+
+	return waitForHomeKey(bufio.NewReader(in))
+}
+
+func waitForHomeKey(reader *bufio.Reader) (bool, error) {
+	for {
+		key, shortcut, err := readHomeKey(reader)
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		switch key {
+		case tuiKeyEnter, tuiKeyLeft, tuiKeyBack:
+			return true, nil
+		case tuiKeyQuit:
+			return false, nil
+		}
+		switch shortcut {
+		case 'b', 'h':
+			return true, nil
+		case 'q':
+			return false, nil
+		}
+	}
+}
+
+func renderHomeActionScreen(out io.Writer) {
+	// The launcher uses the alternate buffer. Once an action is selected it
+	// returns to the normal buffer, which must be cleared so completed actions
+	// never stack above the newly selected page.
+	fmt.Fprint(out, "\x1b[H\x1b[2J")
+}
+
+func (a *App) promptHomeCommand() (args []string, quit bool, err error) {
+	fmt.Fprintf(a.Out, "\n  %s%s◆ RUN A COMMAND%s\n", ansiPink, ansiBold, ansiReset)
+	fmt.Fprintf(a.Out, "  %sType a command below; the `bvx` prefix is optional.%s\n", ansiDim, ansiReset)
+	fmt.Fprintf(a.Out, "  %sBlank Enter returns Home  •  q quits%s\n\n", ansiDim, ansiReset)
+
+	for {
+		line, promptErr := a.prompt("  " + ansiCyan + ansiBold + "bvx › " + ansiReset)
+		if promptErr != nil {
+			return nil, false, promptErr
+		}
+		if strings.TrimSpace(line) == "q" {
+			return nil, true, nil
+		}
+		args, parseErr := parseHomeCommandLine(line)
+		if parseErr != nil {
+			fmt.Fprintf(a.Out, "  %s✗ %v%s\n", ansiRed, parseErr, ansiReset)
+			continue
+		}
+		return args, false, nil
+	}
+}
+
+func parseHomeCommandLine(line string) ([]string, error) {
+	var args []string
+	var token strings.Builder
+	var quote rune
+	escaped, started := false, false
+
+	flush := func() {
+		if started {
+			args = append(args, token.String())
+			token.Reset()
+			started = false
+		}
+	}
+	for _, char := range strings.TrimSpace(line) {
+		if escaped {
+			token.WriteRune(char)
+			started, escaped = true, false
+			continue
+		}
+		if char == '\\' && quote != '\'' {
+			escaped, started = true, true
+			continue
+		}
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			} else {
+				token.WriteRune(char)
+			}
+			started = true
+			continue
+		}
+		switch {
+		case char == '\'' || char == '"':
+			quote, started = char, true
+		case unicode.IsSpace(char):
+			flush()
+		default:
+			token.WriteRune(char)
+			started = true
+		}
+	}
+	if escaped {
+		return nil, fmt.Errorf("command ends with an unfinished escape")
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("command has an unterminated quote")
+	}
+	flush()
+	if len(args) > 0 && strings.EqualFold(args[0], "bvx") {
+		args = args[1:]
+	}
+	return args, nil
+}
+
 func homeMenuWithKeys(reader *bufio.Reader, out io.Writer, size func() (int, int)) ([]string, bool, error) {
 	cursor := 0
 	for {
@@ -119,8 +249,10 @@ func homeMenuWithKeys(reader *bufio.Reader, out io.Writer, size func() (int, int
 			cursor = (cursor + 1) % len(homeActions)
 		case tuiKeyEnter, tuiKeyRight:
 			return append([]string(nil), homeActions[cursor].args...), true, nil
-		case tuiKeyQuit, tuiKeyLeft, tuiKeyBack:
+		case tuiKeyQuit:
 			return nil, true, nil
+		case tuiKeyLeft, tuiKeyBack:
+			continue
 		}
 		if shortcut != 0 {
 			if action, ok := homeActionForShortcut(shortcut); ok {
@@ -131,7 +263,7 @@ func homeMenuWithKeys(reader *bufio.Reader, out io.Writer, size func() (int, int
 }
 
 func renderHomeMenu(out io.Writer, cursor, width, height int) {
-	if width >= 52 && height >= 22 {
+	if width >= homeBrandLogoWidth+2 && height >= 22 {
 		renderHomeMenuWide(out, cursor, width, height)
 		return
 	}
@@ -141,46 +273,98 @@ func renderHomeMenu(out io.Writer, cursor, width, height int) {
 func renderHomeMenuWide(out io.Writer, cursor, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
 	selected := homeActions[cursor]
-	description := []string{}
-	if height >= 24 {
-		description = wrapTUIText(selected.description, minInt(64, width-4))
-	}
-	usedHeight := 22 + len(description)
-	for row := 0; row < maxInt(0, (height-usedHeight)/2); row++ {
-		fmt.Fprint(out, "\r\n")
-	}
-	for index, line := range homeLogo {
-		color := ansiBlue
-		if index >= len(homeLogo)/2 {
-			color = ansiCyan
-		}
-		writeHomeCentered(out, width, color+ansiBold+line+ansiReset, len([]rune(line)))
-	}
-	writeHomeCentered(out, width, ansiPink+ansiBold+"BREVITAS"+ansiReset+ansiDim+"  Optimize every AI request."+ansiReset, 35)
-	writeHomeCentered(out, width, ansiBlue+ansiBold+"START HERE"+ansiReset, 10)
+	frameWidth := minInt(width-2, 104)
+	leftWidth := maxInt(30, (frameWidth-3)*42/100)
+	rightWidth := frameWidth - leftWidth - 3
+	bodyHeight := minInt(maxInt(len(homeActions)+2, height-9), 16)
 
-	menuWidth := minInt(46, width-4)
+	for _, line := range homeBrandLogo(true) {
+		writeHomeCentered(out, width, line, homeBrandLogoWidth)
+	}
+
+	topBorder := ansiBlue + "╭" + homePanelBorderTitle("ACTIONS", leftWidth) +
+		"┬" + homePanelBorderTitle("SELECTED ACTION", rightWidth) + "╮" + ansiReset
+	writeHomeCentered(out, width, topBorder, frameWidth)
+
+	leftRows := make([]homePanelLine, bodyHeight)
+	leftStart := maxInt(0, (bodyHeight-len(homeActions))/2)
 	for index, action := range homeActions {
-		if index == 2 {
-			writeHomeCentered(out, width, ansiBlue+ansiBold+"EXPLORE"+ansiReset, 7)
+		leftRows[leftStart+index] = homePanelLine{
+			value: formatHomeAction(action, index == cursor, leftWidth-2),
+			width: leftWidth - 2,
 		}
-		row := formatHomeAction(action, index == cursor, menuWidth)
-		writeHomeCentered(out, width, row, menuWidth)
 	}
 
-	fmt.Fprint(out, "\r\n")
-	writeHomeCentered(out, width, selected.color+ansiBold+selected.command+ansiReset, len([]rune(selected.command)))
-	for _, line := range description {
-		writeHomeCentered(out, width, ansiDim+line+ansiReset, len([]rune(line)))
+	rightRows := []homePanelLine{
+		{},
+		{
+			value: selected.color + ansiBold + selected.icon + "  " + selected.label + ansiReset,
+			width: len([]rune(selected.icon)) + 2 + len([]rune(selected.label)),
+		},
+		{
+			value: ansiCyan + ansiBold + selected.command + ansiReset,
+			width: len([]rune(selected.command)),
+		},
+		{},
 	}
-	fmt.Fprint(out, "\r\n")
-	footer := "↑/↓ navigate  Enter launch  shortcut keys shown at right  q quit"
+	for _, line := range wrapTUIText(selected.description, rightWidth-4) {
+		rightRows = append(rightRows, homePanelLine{value: ansiDim + line + ansiReset, width: len([]rune(line))})
+	}
+	rightRows = append(rightRows,
+		homePanelLine{},
+		homePanelLine{value: ansiBlue + ansiBold + "READY TO LAUNCH" + ansiReset, width: 15},
+		homePanelLine{
+			value: fmt.Sprintf("Press %sEnter%s or %s[%c]%s", ansiBold, ansiReset, ansiOrange, selected.shortcut, ansiReset),
+			width: 18,
+		},
+	)
+	rightStart := maxInt(0, (bodyHeight-len(rightRows))/2)
+
+	for row := 0; row < bodyHeight; row++ {
+		left := homePanelPad(leftRows[row], leftWidth)
+		right := strings.Repeat(" ", rightWidth)
+		if panelRow := row - rightStart; panelRow >= 0 && panelRow < len(rightRows) {
+			right = homePanelPad(rightRows[panelRow], rightWidth)
+		}
+		line := ansiBlue + "│" + ansiReset + left + ansiBlue + "│" + ansiReset + right + ansiBlue + "│" + ansiReset
+		writeHomeCentered(out, width, line, frameWidth)
+	}
+
+	bottomBorder := ansiBlue + "╰" + strings.Repeat("─", leftWidth) +
+		"┴" + strings.Repeat("─", rightWidth) + "╯" + ansiReset
+	writeHomeCentered(out, width, bottomBorder, frameWidth)
+
+	footer := "↑/↓ navigate  •  Enter launch  •  actions return Home  •  q quit"
 	writeHomeCenteredFinal(out, width, ansiDim+truncateText(footer, width-2)+ansiReset, minInt(len([]rune(footer)), width-2))
+}
+
+type homePanelLine struct {
+	value string
+	width int
+}
+
+func homePanelBorderTitle(title string, width int) string {
+	prefix := "─ " + title + " "
+	if len([]rune(prefix)) > width {
+		return strings.Repeat("─", width)
+	}
+	return prefix + strings.Repeat("─", width-len([]rune(prefix)))
+}
+
+func homePanelPad(line homePanelLine, width int) string {
+	contentWidth := maxInt(0, width-2)
+	value := line.value
+	visibleWidth := line.width
+	if visibleWidth > contentWidth {
+		value = truncateText(value, contentWidth)
+		visibleWidth = contentWidth
+	}
+	return " " + value + strings.Repeat(" ", maxInt(0, contentWidth-visibleWidth)) + " "
 }
 
 func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 	fmt.Fprint(out, "\x1b[H\x1b[2J")
-	fmt.Fprintf(out, "%s%s BVX %s  %sBrevitas home%s\r\n", ansiBold, ansiCyan, ansiReset, ansiDim, ansiReset)
+	fmt.Fprintf(out, "%s%s brevitas %s  %shome%s\r\n", ansiBold, ansiCyan, ansiReset, ansiDim, ansiReset)
 	fmt.Fprintf(out, "%sStart here: choose what you want to set up or inspect.%s\r\n\r\n", ansiDim, ansiReset)
 	visible := maxInt(4, height-9)
 	start := 0
@@ -196,7 +380,7 @@ func renderHomeMenuStacked(out io.Writer, cursor, width, height int) {
 	}
 	fmt.Fprintf(out, "\r\n%s%s%s\r\n", homeActions[cursor].color+ansiBold, truncateText(homeActions[cursor].command, width-1), ansiReset)
 	fmt.Fprintf(out, "%s%s%s\r\n", ansiDim, truncateText(homeActions[cursor].description, width-1), ansiReset)
-	fmt.Fprintf(out, "\r\n%s↑/↓ navigate  Enter launch  press a shortcut to launch  q quit%s", ansiDim, ansiReset)
+	fmt.Fprintf(out, "\r\n%s↑/↓ navigate  Enter launch  actions return Home  q quit%s", ansiDim, ansiReset)
 }
 
 func formatHomeAction(action homeAction, selected bool, width int) string {

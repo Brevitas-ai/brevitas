@@ -51,6 +51,24 @@ func (a *App) printCodebaseHelp(repo string) {
 		{"--api-key KEY", "Use a key directly for CI and automation"},
 		{"--no-open", "Do not open the HTML scan report"},
 		{"--target URL", "Override the gateway URL"},
+		{"--environment NAME", "Inventory this deployment environment (default: local)"},
+		{"-h, --help", "Show this help"},
+	})
+}
+
+func (a *App) printOnboardHelp() {
+	a.commandHelp("Onboard a company backend", "Scan AI traffic and import exact customer identities.", "bvx onboard [flags] [repo]", []helpOption{
+		{"--customers FILE", "Past-customer export: CSV, TSV, JSON, JSONL, or NDJSON"},
+		{"--id-field PATH", "Explicit stable ID field, such as customer.uuid"},
+		{"--name-field PATH", "Opt in to a display-name field, such as profile.company"},
+		{"--apply", "Apply codebase routing and import validated customers"},
+		{"--auto", "With --apply, also rewrite hardcoded provider URLs"},
+		{"--skip-invalid", "Import valid records while reporting rejected rows"},
+		{"--skip-scan", "Import customer data without scanning a codebase"},
+		{"--api-key KEY", "Use a key directly for CI; otherwise browser login"},
+		{"--no-open", "Do not open the AgentMap report"},
+		{"--target URL", "Override the Brevitas gateway URL"},
+		{"--environment NAME", "Inventory this deployment environment"},
 		{"-h, --help", "Show this help"},
 	})
 }

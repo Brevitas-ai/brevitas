@@ -29,6 +29,10 @@ func (a *App) cmdStatus(ctx context.Context, _ []string) error {
 
 	// API key.
 	a.statusLine("API key", a.Keyring.Backend(), a.hasKey(ctx))
+	if a.Cfg.Inventory.DeviceID != "" {
+		detail := fmt.Sprintf("%d registered installation(s)", len(a.Cfg.Inventory.Installations))
+		a.statusLine("AgentMap inventory", detail, true)
+	}
 
 	// Optimizer.
 	if err := a.optimizerClient().Health(ctx); err == nil {

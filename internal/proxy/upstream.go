@@ -51,26 +51,13 @@ func copyRequestHeaders(dst http.Header, src http.Header) {
 	}
 }
 
-// applyGatewayAuth injects a single Brevitas key using each family's scheme.
-// This is ONLY used in "inject" (gateway) mode, where the configured upstream
-// is a Brevitas-managed gateway that holds the real provider keys. In the
-// default "passthrough" mode it is not called and the tool's own credentials
-// flow through unchanged.
-func applyGatewayAuth(req *http.Request, family Family, apiKey string) {
+// applyGatewayAuth authenticates the Brevitas hop without overwriting the
+// provider credential already copied from the caller.
+func applyGatewayAuth(req *http.Request, _ Family, apiKey string) {
 	if apiKey == "" {
 		return
 	}
-	switch family {
-	case FamilyAnthropic:
-		req.Header.Set("x-api-key", apiKey)
-		if req.Header.Get("anthropic-version") == "" {
-			req.Header.Set("anthropic-version", "2023-06-01")
-		}
-	case FamilyGoogle:
-		req.Header.Set("x-goog-api-key", apiKey)
-	default: // OpenAI-compatible
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
+	req.Header.Set("X-Brevitas-Key", apiKey)
 }
 
 // upstreamURL joins an upstream base with a request path+query.
