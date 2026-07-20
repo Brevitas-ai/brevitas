@@ -78,6 +78,6 @@ class Bvx < Formula
 
   test do
     assert_match "brevitas", shell_output("#{bin}/bvx version")
-    assert_match "Commands:", shell_output("#{bin}/bvx help")
+    assert_match "bvx onboard", shell_output("#{bin}/bvx help")
   end
 end
