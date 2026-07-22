@@ -18,6 +18,13 @@ import (
 // reconfigured to send their traffic here.
 const DefaultProxyPort = 8080
 
+// OpenAIChatGPTUpstreamKey identifies the Codex backend used by ChatGPT-plan
+// authentication. It is separate from the Platform API upstream because a
+// ChatGPT access token is not valid at api.openai.com.
+const OpenAIChatGPTUpstreamKey = "openai_chatgpt"
+
+const defaultOpenAIChatGPTUpstream = "https://chatgpt.com/backend-api/codex"
+
 // Config is Brevitas's persisted configuration. It never contains the API
 // key — that is stored in the OS credential store (see internal/keyring).
 type Config struct {
@@ -134,9 +141,10 @@ func Default() *Config {
 			CallTimeout:  60 * time.Second,
 		},
 		Upstreams: map[string]string{
-			"openai":    "https://api.openai.com",
-			"anthropic": "https://api.anthropic.com",
-			"google":    "https://generativelanguage.googleapis.com",
+			"openai":                 "https://api.openai.com",
+			OpenAIChatGPTUpstreamKey: defaultOpenAIChatGPTUpstream,
+			"anthropic":              "https://api.anthropic.com",
+			"google":                 "https://generativelanguage.googleapis.com",
 		},
 		EnabledProviders: []string{},
 		UpdatedAt:        time.Now().UTC(),
@@ -178,6 +186,15 @@ func LoadFrom(path string) (*Config, error) {
 	cfg := Default()
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	// Config files written before ChatGPT-plan routing existed replace the
+	// default upstream map during JSON decoding. Backfill only the new key so
+	// existing user overrides remain untouched.
+	if cfg.Upstreams == nil {
+		cfg.Upstreams = map[string]string{}
+	}
+	if _, ok := cfg.Upstreams[OpenAIChatGPTUpstreamKey]; !ok {
+		cfg.Upstreams[OpenAIChatGPTUpstreamKey] = defaultOpenAIChatGPTUpstream
 	}
 	return cfg, nil
 }

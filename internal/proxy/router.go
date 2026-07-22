@@ -3,6 +3,8 @@ package proxy
 import (
 	"net/http"
 	"strings"
+
+	"github.com/Brevitas-ai/brevitas/internal/config"
 )
 
 // Family identifies an upstream API dialect the proxy understands.
@@ -18,8 +20,18 @@ const (
 // route describes where and how to forward a request.
 type route struct {
 	Family Family
+	// Upstream overrides the default family-named upstream when one wire
+	// protocol has distinct authentication backends.
+	Upstream string
 	// Path is the upstream path (and query) to forward to.
 	Path string
+}
+
+// tracksProviderCosts reports whether this request is billed per API token.
+// ChatGPT-plan requests consume subscription credits rather than Platform API
+// spend, so they must never enter BVX's dollar-cost reporting path.
+func (r route) tracksProviderCosts() bool {
+	return r.Upstream != config.OpenAIChatGPTUpstreamKey
 }
 
 // classify inspects the request path and headers to determine the upstream
@@ -46,32 +58,42 @@ func classify(r *http.Request) route {
 	}
 
 	rt := route{Path: path, Family: family}
+	if family == FamilyUnknown {
+		switch {
+		// Anthropic Messages API.
+		case strings.HasPrefix(path, "/v1/messages"),
+			strings.HasPrefix(path, "/v1/complete"),
+			r.Header.Get("x-api-key") != "" && r.Header.Get("anthropic-version") != "":
+			rt.Family = FamilyAnthropic
+
+		// Google Generative Language API (Gemini).
+		case strings.HasPrefix(path, "/v1beta/"),
+			strings.HasPrefix(path, "/v1/models/") && strings.Contains(path, ":generate"),
+			strings.Contains(path, ":streamGenerateContent"):
+			rt.Family = FamilyGoogle
+
+		// OpenAI-compatible (chat/completions, responses, embeddings, models...).
+		case strings.HasPrefix(path, "/v1/"):
+			rt.Family = FamilyOpenAI
+
+		default:
+			rt.Family = FamilyUnknown
+		}
+	}
+
+	// Codex attaches ChatGPT-Account-ID only for ChatGPT-plan authentication.
+	// Those bearer tokens must go to the ChatGPT Codex backend, whose base URL
+	// already owns the /codex segment and therefore expects /responses rather
+	// than the Platform API's /v1/responses path.
+	if rt.Family == FamilyOpenAI && strings.TrimSpace(r.Header.Get("ChatGPT-Account-ID")) != "" {
+		rt.Upstream = config.OpenAIChatGPTUpstreamKey
+		rt.Path = strings.TrimPrefix(rt.Path, "/v1")
+		if rt.Path == "" {
+			rt.Path = "/"
+		}
+	}
 	if r.URL.RawQuery != "" {
-		rt.Path = path + "?" + r.URL.RawQuery
-	}
-	if family != FamilyUnknown {
-		return rt
-	}
-
-	switch {
-	// Anthropic Messages API.
-	case strings.HasPrefix(path, "/v1/messages"),
-		strings.HasPrefix(path, "/v1/complete"),
-		r.Header.Get("x-api-key") != "" && r.Header.Get("anthropic-version") != "":
-		rt.Family = FamilyAnthropic
-
-	// Google Generative Language API (Gemini).
-	case strings.HasPrefix(path, "/v1beta/"),
-		strings.HasPrefix(path, "/v1/models/") && strings.Contains(path, ":generate"),
-		strings.Contains(path, ":streamGenerateContent"):
-		rt.Family = FamilyGoogle
-
-	// OpenAI-compatible (chat/completions, responses, embeddings, models...).
-	case strings.HasPrefix(path, "/v1/"):
-		rt.Family = FamilyOpenAI
-
-	default:
-		rt.Family = FamilyUnknown
+		rt.Path += "?" + r.URL.RawQuery
 	}
 
 	return rt

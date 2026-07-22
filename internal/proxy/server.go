@@ -167,7 +167,8 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, snif
 // the response cache and report usage. Recording is fire-and-forget on a
 // detached context — it must never delay or fail the client's response.
 func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response,
-	rec *optimizer.RecordRequest, apiKey string, report cloud.UsageReport, clientCached bool) {
+	rec *optimizer.RecordRequest, apiKey string, report cloud.UsageReport, clientCached bool,
+	trackCosts bool) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.Proxy.MaxBodyBytes))
 	if err != nil {
 		// Fall back to a plain stream of whatever we did read; don't record a partial.
@@ -192,8 +193,10 @@ func (s *Server) streamAndRecord(w http.ResponseWriter, resp *http.Response,
 	// Meter the real usage the provider reported (cache-read/write tokens and
 	// the dollars they saved) so `bvx stats` can answer "did caching help".
 	usage := extractUsage(Family(report.Provider), body)
-	s.stats.recordUsage(Family(report.Provider), report.Model, usage, clientCached)
-	s.reportCloud(apiKey, reportWithUsage(report, usage))
+	s.stats.recordUsage(Family(report.Provider), report.Model, usage, clientCached, trackCosts)
+	if trackCosts {
+		s.reportCloud(apiKey, reportWithUsage(report, usage))
+	}
 
 	if rec == nil || s.opt == nil {
 		return

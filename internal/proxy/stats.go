@@ -71,8 +71,10 @@ func (s *Stats) record(before, after int) {
 // saved via caching) into the totals. clientCached says the request already
 // carried cache_control, so any cache reads are the client's doing, not
 // Brevitas's — the raw tokens are still measured, but no dollars are credited.
+// trackCosts is false for subscription-backed traffic such as a ChatGPT plan;
+// raw token counts remain useful, but BVX must not assign API dollar prices.
 // A zero usage is a no-op.
-func (s *Stats) recordUsage(family Family, model string, u usage, clientCached bool) {
+func (s *Stats) recordUsage(family Family, model string, u usage, clientCached, trackCosts bool) {
 	if u.empty() {
 		return
 	}
@@ -82,6 +84,9 @@ func (s *Stats) recordUsage(family Family, model string, u usage, clientCached b
 	s.CacheWriteTokens.Add(u.cacheWrite)
 	if clientCached && u.cacheRead > 0 {
 		s.ClientCachedReadTokens.Add(u.cacheRead)
+	}
+	if !trackCosts {
+		return
 	}
 	if micros, known := savedMicroUSD(family, model, u, !clientCached); known {
 		s.CostSavedMicros.Add(micros)

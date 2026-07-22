@@ -268,6 +268,111 @@ func TestProxyOptimizesAndForwards(t *testing.T) {
 	}
 }
 
+func TestCodexAuthenticationModeSelectsMatchingOpenAIEndpoint(t *testing.T) {
+	type capturedRequest struct {
+		path      string
+		auth      string
+		accountID string
+	}
+	apiRequests := make(chan capturedRequest, 1)
+	chatGPTRequests := make(chan capturedRequest, 1)
+	costReports := make(chan cloud.UsageReport, 2)
+	upstream := func(requests chan<- capturedRequest) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests <- capturedRequest{
+				path: r.URL.RequestURI(), auth: r.Header.Get("Authorization"),
+				accountID: r.Header.Get("ChatGPT-Account-ID"),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"response-test","usage":{`+
+				`"input_tokens":100,"output_tokens":10,"input_tokens_details":{"cached_tokens":80}}}`)
+		}))
+	}
+	apiUpstream := upstream(apiRequests)
+	defer apiUpstream.Close()
+	chatGPTUpstream := upstream(chatGPTRequests)
+	defer chatGPTUpstream.Close()
+
+	cfg := config.Default()
+	cfg.Upstreams["openai"] = apiUpstream.URL
+	cfg.Upstreams[config.OpenAIChatGPTUpstreamKey] = chatGPTUpstream.URL
+	srv := New(Options{
+		Config: cfg,
+		APIKey: func(context.Context) (string, error) { return "bvt-cost-test", nil },
+		ReportUsage: func(_ context.Context, _ string, report cloud.UsageReport) error {
+			costReports <- report
+			return nil
+		},
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	request := func(query, auth, accountID string) {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/responses?"+query,
+			strings.NewReader(`{"model":"gpt-4o-mini","input":"hello"}`))
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("X-Brevitas-Request-ID", query)
+		if accountID != "" {
+			req.Header.Set("ChatGPT-Account-ID", accountID)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d", resp.StatusCode)
+		}
+	}
+
+	request("mode=plan", "Bearer chatgpt-token", "account-test")
+	select {
+	case got := <-chatGPTRequests:
+		if got.path != "/responses?mode=plan" || got.auth != "Bearer chatgpt-token" ||
+			got.accountID != "account-test" {
+			t.Fatalf("ChatGPT request = %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ChatGPT-plan request did not reach ChatGPT backend")
+	}
+	select {
+	case got := <-apiRequests:
+		t.Fatalf("ChatGPT-plan request reached Platform API: %#v", got)
+	default:
+	}
+	select {
+	case report := <-costReports:
+		t.Fatalf("ChatGPT-plan request produced a cost report: %#v", report)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	request("mode=api", "Bearer sk-api-test", "")
+	select {
+	case got := <-apiRequests:
+		if got.path != "/v1/responses?mode=api" || got.auth != "Bearer sk-api-test" ||
+			got.accountID != "" {
+			t.Fatalf("Platform API request = %#v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("API-key request did not reach Platform API")
+	}
+	select {
+	case report := <-costReports:
+		if report.RequestID != "mode=api" || report.Model != "gpt-4o-mini" || report.FreshInputTokens != 20 ||
+			report.CachedInputTokens != 80 || report.OutputTokens != 10 {
+			t.Fatalf("API-key cost report = %#v", report)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("API-key request did not produce a cost report")
+	}
+	select {
+	case report := <-costReports:
+		t.Fatalf("unexpected second cost report: %#v", report)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestGatewayReceivesCustomerAttribution(t *testing.T) {
 	var gotCustomer, gotAuth, gotBrevitasKey string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

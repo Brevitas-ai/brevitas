@@ -63,8 +63,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "brevitas: no upstream mapping for %s", r.URL.Path)
 		return
 	}
+	trackCosts := rt.tracksProviderCosts()
 
-	upstreamBase, ok := s.cfg.Upstreams[string(rt.Family)]
+	upstreamKey := rt.Upstream
+	if upstreamKey == "" {
+		upstreamKey = string(rt.Family)
+	}
+	upstreamBase, ok := s.cfg.Upstreams[upstreamKey]
 	if !ok || upstreamBase == "" {
 		s.writeError(w, http.StatusBadGateway, "brevitas: no upstream configured for %s", rt.Family)
 		return
@@ -125,7 +130,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(resp.CachedResponse)
 			s.stats.markCacheHit()
-			s.reportCloud(apiKey, cacheHitCloudReport(r, rt.Family, meta.Model, resp.CachedResponse))
+			if trackCosts {
+				s.reportCloud(apiKey, cacheHitCloudReport(r, rt.Family, meta.Model, resp.CachedResponse))
+			}
 			s.log.Info("cache hit", "family", rt.Family, "model", meta.Model,
 				"kind", resp.CacheKind, "dur_ms", time.Since(start).Milliseconds())
 			return
@@ -185,7 +192,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				Body:     json.RawMessage(body),
 			}
 		}
-		s.streamAndRecord(w, resp, record, apiKey, report, clientCached)
+		s.streamAndRecord(w, resp, record, apiKey, report, clientCached, trackCosts)
 	} else {
 		// Meter usage off streamed completions too — the SSE trailer carries the
 		// same cache-read/write token counts, so caching stats aren't blind to the
@@ -198,8 +205,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.streamResponse(w, resp, sniff)
 		if sniff != nil {
 			usage := sniff.result()
-			s.stats.recordUsage(rt.Family, meta.Model, usage, clientCached)
-			s.reportCloud(apiKey, reportWithUsage(report, usage))
+			s.stats.recordUsage(rt.Family, meta.Model, usage, clientCached, trackCosts)
+			if trackCosts {
+				s.reportCloud(apiKey, reportWithUsage(report, usage))
+			}
 			if s.opt != nil && !usage.empty() {
 				record := &optimizer.RecordRequest{
 					Provider: string(rt.Family), Model: meta.Model,

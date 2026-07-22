@@ -3,6 +3,8 @@ package proxy
 import (
 	"net/http"
 	"testing"
+
+	"github.com/Brevitas-ai/brevitas/internal/config"
 )
 
 func TestClassify(t *testing.T) {
@@ -39,6 +41,38 @@ func TestClassifyRewritesAgentmapNamespace(t *testing.T) {
 	}
 	if rt.Path != "/v1/chat/completions?a=1" {
 		t.Errorf("rewritten path = %q, want /v1/chat/completions?a=1", rt.Path)
+	}
+}
+
+func TestClassifyRoutesCodexChatGPTPlanToItsBackend(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodPost, "http://x/v1/responses?stream=true", nil)
+	req.Header.Set("ChatGPT-Account-ID", "account-test")
+	rt := classify(req)
+	if rt.Family != FamilyOpenAI {
+		t.Fatalf("family = %q", rt.Family)
+	}
+	if rt.Upstream != config.OpenAIChatGPTUpstreamKey {
+		t.Fatalf("upstream = %q", rt.Upstream)
+	}
+	if rt.Path != "/responses?stream=true" {
+		t.Errorf("rewritten path = %q, want /responses?stream=true", rt.Path)
+	}
+	if rt.tracksProviderCosts() {
+		t.Error("ChatGPT-plan route must not track API costs")
+	}
+}
+
+func TestClassifyKeepsCodexAPIKeyOnPlatformEndpoint(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodPost, "http://x/v1/responses?stream=true", nil)
+	rt := classify(req)
+	if rt.Family != FamilyOpenAI || rt.Upstream != "" {
+		t.Fatalf("route = %#v", rt)
+	}
+	if rt.Path != "/v1/responses?stream=true" {
+		t.Errorf("path = %q, want /v1/responses?stream=true", rt.Path)
+	}
+	if !rt.tracksProviderCosts() {
+		t.Error("API-key route must track provider costs")
 	}
 }
 

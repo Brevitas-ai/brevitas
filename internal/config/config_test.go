@@ -14,7 +14,7 @@ func TestDefaultConfig(t *testing.T) {
 	if c.ProxyURL() != "http://127.0.0.1:8080" {
 		t.Fatalf("proxy url = %q", c.ProxyURL())
 	}
-	for _, fam := range []string{"openai", "anthropic", "google"} {
+	for _, fam := range []string{"openai", OpenAIChatGPTUpstreamKey, "anthropic", "google"} {
 		if c.Upstreams[fam] == "" {
 			t.Errorf("missing upstream for %s", fam)
 		}
@@ -61,6 +61,29 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.EnabledProviders) != 1 || got.EnabledProviders[0] != "claude" {
 		t.Errorf("providers = %v", got.EnabledProviders)
+	}
+}
+
+func TestLoadBackfillsChatGPTUpstreamWithoutReplacingOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	legacy := Default()
+	delete(legacy.Upstreams, OpenAIChatGPTUpstreamKey)
+	legacy.Upstreams["openai"] = "https://openai-proxy.example/v1"
+	if err := legacy.SaveTo(path); err != nil {
+		t.Fatalf("save legacy config: %v", err)
+	}
+
+	got, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("load legacy config: %v", err)
+	}
+	if got.Upstreams[OpenAIChatGPTUpstreamKey] != defaultOpenAIChatGPTUpstream {
+		t.Errorf("ChatGPT upstream = %q", got.Upstreams[OpenAIChatGPTUpstreamKey])
+	}
+	if got.Upstreams["openai"] != "https://openai-proxy.example/v1" {
+		t.Errorf("OpenAI override was replaced: %q", got.Upstreams["openai"])
 	}
 }
 

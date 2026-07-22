@@ -157,7 +157,7 @@ func TestSavedMicroUSDUnknownModel(t *testing.T) {
 func TestRecordUsageCreditsBrevitasWhenClientDidNotCache(t *testing.T) {
 	s := newStats()
 	// clientCached=false: Brevitas inserted the breakpoints, so it earns credit.
-	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, false)
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, false, true)
 	snap := s.snapshot()
 	if snap.CacheReadTokens != 900 || snap.InputTokens != 100 {
 		t.Fatalf("tokens not recorded: %+v", snap)
@@ -178,7 +178,7 @@ func TestRecordUsageNoCreditWhenClientCached(t *testing.T) {
 	s := newStats()
 	// clientCached=true: the reads are the client's own caching. Tokens are still
 	// measured, but Brevitas is credited $0 — this is the bug the fix addresses.
-	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, true)
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{inputTokens: 100, cacheRead: 900}, true, true)
 	snap := s.snapshot()
 	if snap.CacheReadTokens != 900 {
 		t.Errorf("raw cache reads should still be measured, got %d", snap.CacheReadTokens)
@@ -193,8 +193,22 @@ func TestRecordUsageNoCreditWhenClientCached(t *testing.T) {
 
 func TestRecordUsageEmptyIsNoop(t *testing.T) {
 	s := newStats()
-	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{}, false)
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8", usage{}, false, true)
 	if snap := s.snapshot(); snap.CacheReadTokens != 0 || snap.PricedResponses != 0 {
 		t.Errorf("empty usage should not record anything: %+v", snap)
+	}
+}
+
+func TestRecordUsageDoesNotPriceSubscriptionTraffic(t *testing.T) {
+	s := newStats()
+	s.recordUsage(FamilyAnthropic, "claude-opus-4-8",
+		usage{inputTokens: 100, cacheRead: 900}, false, false)
+
+	snap := s.snapshot()
+	if snap.InputTokens != 100 || snap.CacheReadTokens != 900 {
+		t.Fatalf("subscription tokens were not measured: %+v", snap)
+	}
+	if snap.CostSavedUSD != 0 || snap.PricedResponses != 0 || snap.AttributedCacheReadTokens != 0 {
+		t.Fatalf("subscription traffic was priced: %+v", snap)
 	}
 }
