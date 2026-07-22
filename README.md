@@ -151,7 +151,7 @@ Installation complete.
 | `bvx start` / `stop` / `restart` | Control the background service |
 | `bvx logs [-f]` | Print/follow proxy logs |
 | `bvx config [set-port\|set-upstream\|set-python]` | View/edit config |
-| `bvx login` / `logout` | Manage the stored API key |
+| `bvx login` / `logout` | Manage the stored API key (`login` opens Home when complete) |
 | `bvx update [-y]` | Alert on BVX updates and check/upgrade `brevitas-systems` |
 | `bvx version` | Version info |
 

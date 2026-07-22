@@ -262,7 +262,7 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\bvx"
 | `bvx start` / `stop` / `restart` | Control the background proxy service |
 | `bvx logs` | Print (or follow, with `-f`) the proxy logs |
 | `bvx config` | Print or edit Brevitas configuration |
-| `bvx login` / `logout` | Connect through the dashboard / remove the stored key |
+| `bvx login` / `logout` | Connect through the dashboard and open Home / remove the stored key |
 | `bvx update` | Alert on BVX updates and check/upgrade `brevitas-systems` |
 | `bvx version` | Print version information |
 

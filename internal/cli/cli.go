@@ -120,7 +120,7 @@ func (a *App) Run(ctx context.Context, args []string) int {
 				}
 				return 1
 			}
-			if name == "install" && a.shouldOpenDashboardAfterInstall(args[1:]) {
+			if a.shouldOpenDashboardAfterCommand(name, args[1:]) {
 				return a.runHomeDashboard(ctx)
 			}
 			return 0
@@ -222,11 +222,15 @@ func (a *App) shouldUseInteractiveDashboard() bool {
 	return inOK && outOK && canUseArrowNavigator(in, out)
 }
 
-// shouldOpenDashboardAfterInstall keeps first-run setup cohesive: interactive
-// installs authenticate, finish setup, then land at Home. Piped commands,
-// help output, CI, and actions already launched from Home stay non-interactive.
-func (a *App) shouldOpenDashboardAfterInstall(args []string) bool {
-	return !helpRequested(args) && a.shouldUseInteractiveDashboard()
+// shouldOpenDashboardAfterCommand keeps account setup cohesive: interactive
+// installs and logins finish at Home. Piped commands, help output, CI, and
+// actions already launched from Home stay non-interactive.
+func (a *App) shouldOpenDashboardAfterCommand(name string, args []string) bool {
+	return isDashboardLandingCommand(name) && !helpRequested(args) && a.shouldUseInteractiveDashboard()
+}
+
+func isDashboardLandingCommand(name string) bool {
+	return name == "install" || name == "login"
 }
 
 func isHomeCommandReference(args []string) bool {

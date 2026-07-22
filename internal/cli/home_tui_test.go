@@ -203,6 +203,19 @@ func TestSavingsCommandUsesDashboardView(t *testing.T) {
 	}
 }
 
+func TestSetupCommandsLandAtDashboard(t *testing.T) {
+	for _, command := range []string{"install", "login"} {
+		if !isDashboardLandingCommand(command) {
+			t.Fatalf("%s should land at the dashboard", command)
+		}
+	}
+	for _, command := range []string{"logout", "status", "stats"} {
+		if isDashboardLandingCommand(command) {
+			t.Fatalf("%s unexpectedly lands at the dashboard", command)
+		}
+	}
+}
+
 func TestParseHomeCommandLine(t *testing.T) {
 	tests := []struct {
 		input string
