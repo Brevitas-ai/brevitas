@@ -60,11 +60,42 @@ $arch = switch ($archRaw) {
 $version = $env:BVX_VERSION
 if (-not $version) {
     Write-Step "Resolving latest release..."
-    $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" `
-        -Headers @{ 'User-Agent' = 'bvx-install' }
-    $version = $release.tag_name
+
+    # Do not use GitHub's REST API here. Anonymous requests are rate-limited per
+    # public IP, so a shared office, VPN, or ISP can exhaust the quota for every
+    # Windows user behind it. GitHub's normal latest-release URL redirects to
+    # /releases/tag/vX.Y.Z and is not subject to that REST API quota.
+    $request = [System.Net.WebRequest]::Create("https://github.com/$Repo/releases/latest")
+    $request.Method = 'HEAD'
+    $request.AllowAutoRedirect = $true
+    $request.UserAgent = 'bvx-install'
+
+    $response = $null
+    try {
+        $response = $request.GetResponse()
+        $releaseUri = $response.ResponseUri
+    }
+    catch {
+        throw "bvx: could not resolve the latest release from GitHub. Check HTTPS access to github.com or set `$env:BVX_VERSION to a published version and retry. $($_.Exception.Message)"
+    }
+    finally {
+        if ($response) { $response.Close() }
+    }
+
+    $expectedPath = "/$Repo/releases/tag/"
+    $tag = [System.IO.Path]::GetFileName($releaseUri.AbsolutePath)
+    if ($releaseUri.Scheme -ne 'https' -or
+        $releaseUri.Host -ne 'github.com' -or
+        -not $releaseUri.AbsolutePath.StartsWith($expectedPath) -or
+        $tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.-]+)?$') {
+        throw "bvx: GitHub returned an unexpected latest-release URL '$releaseUri'."
+    }
+    $version = $tag
 }
 $version = $version.TrimStart('v')
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.-]+)?$') {
+    throw "bvx: invalid BVX_VERSION '$version'. Expected a published semantic version such as 0.1.27."
+}
 
 $asset   = "bvx-$version-windows-$arch.zip"
 $baseUrl = "https://github.com/$Repo/releases/download/v$version"
