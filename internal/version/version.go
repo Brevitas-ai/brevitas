@@ -25,7 +25,7 @@ var (
 	// PinnedSystemsVersion is the exact brevitas-systems version this installer
 	// installs and upgrades to. Pinning keeps the proxy and the optimization
 	// brain in lockstep.
-	PinnedSystemsVersion = "0.9.11"
+	PinnedSystemsVersion = "0.9.12"
 
 	// PinnedAgentmapVersion is the exact agentmap-scan version installed into
 	// the managed Python environment so `bvx install <repo>` works without a
