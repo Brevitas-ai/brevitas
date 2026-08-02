@@ -26,12 +26,23 @@ var (
 	// installs and upgrades to. Pinning keeps the proxy and the optimization
 	// brain in lockstep.
 	PinnedSystemsVersion = "0.9.11"
+
+	// PinnedAgentmapVersion is the exact agentmap-scan version installed into
+	// the managed Python environment so `bvx install <repo>` works without a
+	// manual pip step.
+	PinnedAgentmapVersion = "0.1.1"
 )
 
 // SystemsPipSpec returns the pip requirement specifier for the pinned
 // brevitas-systems version, e.g. "brevitas-systems==0.9.11".
 func SystemsPipSpec() string {
 	return "brevitas-systems==" + PinnedSystemsVersion
+}
+
+// AgentmapPipSpec returns the pip requirement specifier for the pinned
+// agentmap-scan version, e.g. "agentmap-scan==0.1.1".
+func AgentmapPipSpec() string {
+	return "agentmap-scan==" + PinnedAgentmapVersion
 }
 
 // String returns a human-readable version summary.

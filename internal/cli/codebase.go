@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
@@ -45,6 +46,14 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 	}
 
 	cli := a.agentmapCLI(ctx)
+	if cli == "" {
+		// Install the scanner into the managed interpreter rather than asking
+		// the user to run pip themselves.
+		if py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin); py != "" {
+			a.ensureAgentmapInstalled(ctx, optimizer.NewSystems(py))
+			cli = a.agentmapCLI(ctx)
+		}
+	}
 	if cli == "" {
 		a.page("Connect a repository", "Scan and route a codebase through Brevitas.")
 		a.warn("The Brevitas codebase scanner is not installed.")
@@ -112,9 +121,15 @@ func (a *App) agentmapCLI(ctx context.Context) string {
 	// agentmap-scan is typically installed alongside brevitas-systems; look for
 	// its console script next to the interpreter that can import brevitas.
 	if py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin); py != "" {
-		cli := filepath.Join(filepath.Dir(py), "agentmap")
-		if _, err := os.Stat(cli); err == nil {
-			return cli
+		names := []string{"agentmap"}
+		if runtime.GOOS == "windows" {
+			names = []string{"agentmap.exe", "agentmap"}
+		}
+		for _, name := range names {
+			cli := filepath.Join(filepath.Dir(py), name)
+			if _, err := os.Stat(cli); err == nil {
+				return cli
+			}
 		}
 	}
 	return ""

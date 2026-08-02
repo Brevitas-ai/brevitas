@@ -27,4 +27,6 @@ forwards with the codebase's own key, optimizing tokens in between.
   for Gemini once a Google call site is available to test against.
 - **Per-agent tracking**: agentmap reports agents; wire its report into
   `bvx stats` so per-agent token savings show up after routing.
-- **Version pinning**: `agentmap-scan==0.1.0` — bump and re-test as it evolves.
+- **Version pinning**: pinned in `internal/version` (`PinnedAgentmapVersion`);
+  `bvx` installs it into the managed Python env automatically — bump the pin
+  and re-test as agentmap-scan evolves.

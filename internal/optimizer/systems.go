@@ -39,9 +39,15 @@ func (s *Systems) Installed(ctx context.Context) bool {
 // is "brevitas", so we read the version from package metadata (which also
 // avoids importing the package just to check it exists).
 func (s *Systems) Version(ctx context.Context) (string, error) {
-	out, err := s.run(ctx, "-c", "import importlib.metadata as m; print(m.version('brevitas-systems'))")
+	return s.PackageVersion(ctx, "brevitas-systems")
+}
+
+// PackageVersion returns the installed version of the given pip distribution,
+// read from package metadata so nothing is imported.
+func (s *Systems) PackageVersion(ctx context.Context, dist string) (string, error) {
+	out, err := s.run(ctx, "-c", fmt.Sprintf("import importlib.metadata as m; print(m.version(%q))", dist))
 	if err != nil {
-		return "", fmt.Errorf("brevitas-systems not installed for %s: %w", s.PythonBin, err)
+		return "", fmt.Errorf("%s not installed for %s: %w", dist, s.PythonBin, err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -68,9 +74,14 @@ func (s *Systems) LatestAvailable(ctx context.Context) (string, error) {
 
 // Upgrade runs pip install for the pinned brevitas-systems version.
 func (s *Systems) Upgrade(ctx context.Context) error {
-	_, err := s.run(ctx, "-m", "pip", "install", "--upgrade", version.SystemsPipSpec())
+	return s.InstallPackage(ctx, version.SystemsPipSpec())
+}
+
+// InstallPackage runs pip install --upgrade for the given requirement spec.
+func (s *Systems) InstallPackage(ctx context.Context, spec string) error {
+	_, err := s.run(ctx, "-m", "pip", "install", "--upgrade", spec)
 	if err != nil {
-		return fmt.Errorf("install %s: %w", version.SystemsPipSpec(), err)
+		return fmt.Errorf("install %s: %w", spec, err)
 	}
 	return nil
 }

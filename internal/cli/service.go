@@ -82,6 +82,7 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 		return versionErr
 	})
 	if err == nil && optimizer.CompareVersions(current, version.PinnedSystemsVersion) == 0 {
+		a.ensureAgentmapInstalled(ctx, sys)
 		return a.optimizerAvailable(ctx)
 	}
 
@@ -136,7 +137,26 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 		a.warn("Could not save the managed Python path: %v", err)
 	}
 	a.ok("brevitas-systems %s installed", version.PinnedSystemsVersion)
+	a.ensureAgentmapInstalled(ctx, sys)
 	return a.optimizerAvailable(ctx)
+}
+
+// ensureAgentmapInstalled installs the pinned agentmap-scan scanner into the
+// same interpreter as brevitas-systems so `bvx install <repo>` works out of
+// the box. Failure is non-fatal: the codebase command falls back to printing
+// pip instructions.
+func (a *App) ensureAgentmapInstalled(ctx context.Context, sys *optimizer.Systems) {
+	if v, err := sys.PackageVersion(ctx, "agentmap-scan"); err == nil &&
+		optimizer.CompareVersions(v, version.PinnedAgentmapVersion) >= 0 {
+		return
+	}
+	if err := a.withLoading(fmt.Sprintf("Installing the codebase scanner (agentmap-scan %s)…", version.PinnedAgentmapVersion), func() error {
+		return sys.InstallPackage(ctx, version.AgentmapPipSpec())
+	}); err != nil {
+		a.warn("Codebase scanner not installed: %v", err)
+		return
+	}
+	a.ok("agentmap-scan %s installed", version.PinnedAgentmapVersion)
 }
 
 func firstPython(candidates ...string) string {
