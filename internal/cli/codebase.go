@@ -11,7 +11,8 @@ import (
 	"github.com/Brevitas-ai/brevitas/internal/optimizer"
 )
 
-// installCodebase scans a repository with the agentmap-scan package and,
+// installCodebase scans a repository with the agentmap-scan package (source
+// vendored in python/agentmap-scan, published to PyPI as agentmap-scan) and,
 // optionally, routes its LLM calls through the Brevitas proxy so the optimizer
 // reduces tokens on every provider call.
 //
