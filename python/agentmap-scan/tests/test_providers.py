@@ -143,6 +143,32 @@ def test_two_providers_on_one_line_yields_both(tmp_path):
     assert all(f.line == 1 and f.kind == ENDPOINT for f in findings)
 
 
+def test_app_internal_api_chat_route_is_not_ollama(tmp_path):
+    """A web app's own `/api/chat` route must not be flagged as an Ollama
+    endpoint: that false positive produced a permanent "hardcoded URL" warning
+    that neither a re-run nor --auto could clear (host-less paths have no
+    https:// literal to rewrite)."""
+    findings = _scan_one(
+        tmp_path, "server.py",
+        'if self.path != "/api/chat": return self._send(404, {})',
+    )
+    assert findings == []
+    findings = _scan_one(
+        tmp_path, "index.js",
+        "const res = await fetch('/api/chat', { method: 'POST' });",
+    )
+    assert findings == []
+
+
+def test_ollama_detected_by_port_on_any_host(tmp_path):
+    findings = _scan_one(
+        tmp_path, "compose.sh",
+        'curl http://ollama:11434/api/chat -d @payload.json',
+    )
+    assert providers_found(findings) == ["ollama"]
+    assert findings[0].kind == ENDPOINT
+
+
 def test_same_provider_twice_on_one_line_deduped(tmp_path):
     findings = _scan_one(
         tmp_path, "urls.go",

@@ -30,7 +30,7 @@ var (
 	// PinnedAgentmapVersion is the exact agentmap-scan version installed into
 	// the managed Python environment so `bvx install <repo>` works without a
 	// manual pip step.
-	PinnedAgentmapVersion = "0.1.1"
+	PinnedAgentmapVersion = "0.1.2"
 )
 
 // SystemsPipSpec returns the pip requirement specifier for the pinned
@@ -40,7 +40,7 @@ func SystemsPipSpec() string {
 }
 
 // AgentmapPipSpec returns the pip requirement specifier for the pinned
-// agentmap-scan version, e.g. "agentmap-scan==0.1.1".
+// agentmap-scan version, e.g. "agentmap-scan==0.1.2".
 func AgentmapPipSpec() string {
 	return "agentmap-scan==" + PinnedAgentmapVersion
 }

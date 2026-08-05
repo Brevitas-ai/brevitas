@@ -307,7 +307,13 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         openai_compatible=True,
         approx_price_per_mtok=0.0,
         patterns=(
-            _p(r"localhost:11434|127\.0\.0\.1:11434|/api/(?:generate|chat)\b", ENDPOINT, MEDIUM),
+            # Match Ollama by its distinctive port, on any host (localhost,
+            # 127.0.0.1, a docker service name, …). A bare `/api/chat` or
+            # `/api/generate` path is NOT evidence of Ollama — every chat web
+            # app has a route named like that, and flagging it as a hardcoded
+            # ENDPOINT produced un-clearable "hardcoded URL" warnings that
+            # neither a re-run nor --auto could ever resolve.
+            _p(r"[\w.-]+:11434\b", ENDPOINT, MEDIUM),
             _p(r"from\s+ollama|(?:^|[^.\w])import\s+ollama\b|require\(['\"]ollama['\"]\)", IMPORT, MEDIUM),
         ),
     ),

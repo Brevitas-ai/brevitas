@@ -10,7 +10,7 @@ func TestSystemsPipSpecPinsReleaseModel(t *testing.T) {
 }
 
 func TestAgentmapPipSpecPinsScanner(t *testing.T) {
-	const want = "agentmap-scan==0.1.1"
+	const want = "agentmap-scan==0.1.2"
 	if got := AgentmapPipSpec(); got != want {
 		t.Fatalf("AgentmapPipSpec() = %q, want %q", got, want)
 	}

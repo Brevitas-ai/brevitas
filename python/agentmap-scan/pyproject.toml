@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentmap-scan"
-version = "0.1.1"
+version = "0.1.2"
 description = "Map every AI API call in a codebase — offline, no LLM, no keys. Opens a webpage of your providers, models, and agents."
 readme = "README.md"
 license = { text = "MIT" }
