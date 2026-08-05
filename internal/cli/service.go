@@ -86,43 +86,8 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 		return a.optimizerAvailable(ctx)
 	}
 
-	// Keep the Python package in Brevitas's own virtual environment. This avoids
-	// mutating the user's Python and works with Homebrew's externally-managed
-	// Python installations (PEP 668).
-	venv := filepath.Join(a.Dirs.Data, "python")
-	python := filepath.Join(venv, "bin", "python3")
-	if runtime.GOOS == "windows" {
-		python = filepath.Join(venv, "Scripts", "python.exe")
-	}
-	if _, statErr := os.Stat(python); os.IsNotExist(statErr) {
-		if err := a.Dirs.EnsureAll(); err != nil {
-			a.fail("optimizer install: %v", err)
-			return false
-		}
-		base := firstPython(a.Cfg.Optimizer.PythonBin, "python3", "python3.13", "python")
-		if base == "" {
-			a.fail("optimizer install: Python 3 is required")
-			return false
-		}
-		var output []byte
-		err := a.withLoading("Creating an isolated Python environment…", func() error {
-			var commandErr error
-			output, commandErr = exec.CommandContext(ctx, base, "-m", "venv", venv).CombinedOutput()
-			return commandErr
-		})
-		if err != nil {
-			a.fail("optimizer install: create Python environment: %v: %s", err, output)
-			return false
-		}
-	}
-	var output []byte
-	err = a.withLoading("Preparing secure Python tooling…", func() error {
-		var commandErr error
-		output, commandErr = exec.CommandContext(ctx, python, "-m", "pip", "install", "--upgrade", "pip", "setuptools").CombinedOutput()
-		return commandErr
-	})
-	if err != nil {
-		a.fail("optimizer install: secure Python tooling: %v: %s", err, output)
+	python := a.ensureManagedPython(ctx)
+	if python == "" {
 		return false
 	}
 	sys = optimizer.NewSystems(python)
@@ -139,6 +104,53 @@ func (a *App) ensureOptimizerInstalled(ctx context.Context) bool {
 	a.ok("brevitas-systems %s installed", version.PinnedSystemsVersion)
 	a.ensureAgentmapInstalled(ctx, sys)
 	return a.optimizerAvailable(ctx)
+}
+
+// ensureManagedPython returns the interpreter of Brevitas's own virtual
+// environment, creating the venv (with current pip tooling) on first use.
+// Keeping packages there avoids mutating the user's Python and works with
+// Homebrew's externally-managed Python installations (PEP 668). Returns ""
+// after reporting a failure.
+func (a *App) ensureManagedPython(ctx context.Context) string {
+	venv := filepath.Join(a.Dirs.Data, "python")
+	python := filepath.Join(venv, "bin", "python3")
+	if runtime.GOOS == "windows" {
+		python = filepath.Join(venv, "Scripts", "python.exe")
+	}
+	if _, statErr := os.Stat(python); os.IsNotExist(statErr) {
+		if err := a.Dirs.EnsureAll(); err != nil {
+			a.fail("optimizer install: %v", err)
+			return ""
+		}
+		base := firstPython(a.Cfg.Optimizer.PythonBin,
+			"python3.14", "python3.13", "python3.12", "python3.11", "python3.10",
+			"python3", "python")
+		if base == "" {
+			a.fail("optimizer install: Python 3.10 or newer is required (brew install python)")
+			return ""
+		}
+		var output []byte
+		err := a.withLoading("Creating an isolated Python environment…", func() error {
+			var commandErr error
+			output, commandErr = exec.CommandContext(ctx, base, "-m", "venv", venv).CombinedOutput()
+			return commandErr
+		})
+		if err != nil {
+			a.fail("optimizer install: create Python environment: %v: %s", err, output)
+			return ""
+		}
+	}
+	var output []byte
+	err := a.withLoading("Preparing secure Python tooling…", func() error {
+		var commandErr error
+		output, commandErr = exec.CommandContext(ctx, python, "-m", "pip", "install", "--upgrade", "pip", "setuptools").CombinedOutput()
+		return commandErr
+	})
+	if err != nil {
+		a.fail("optimizer install: secure Python tooling: %v: %s", err, output)
+		return ""
+	}
+	return python
 }
 
 // ensureAgentmapInstalled installs the pinned agentmap-scan scanner into the
@@ -159,12 +171,20 @@ func (a *App) ensureAgentmapInstalled(ctx context.Context, sys *optimizer.System
 	a.ok("agentmap-scan %s installed", version.PinnedAgentmapVersion)
 }
 
+// firstPython returns the first candidate on PATH that is Python 3.10 or
+// newer — the floor shared by brevitas-systems and agentmap-scan. macOS ships
+// a bare 3.9 at /usr/bin/python3, which would create a venv no pinned package
+// can install into.
 func firstPython(candidates ...string) string {
 	for _, candidate := range candidates {
 		if candidate == "" {
 			continue
 		}
-		if path, err := exec.LookPath(candidate); err == nil {
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		if exec.Command(path, "-c", "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)").Run() == nil {
 			return path
 		}
 	}

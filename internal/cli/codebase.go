@@ -47,9 +47,10 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 
 	cli := a.agentmapCLI(ctx)
 	if cli == "" {
-		// Install the scanner into the managed interpreter rather than asking
-		// the user to run pip themselves.
-		if py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin); py != "" {
+		// Bootstrap the managed environment and install the scanner into it,
+		// so a scan-only first run works before `bvx install` has ever set up
+		// the services (and without asking the user to run pip themselves).
+		if py := a.ensureManagedPython(ctx); py != "" {
 			a.ensureAgentmapInstalled(ctx, optimizer.NewSystems(py))
 			cli = a.agentmapCLI(ctx)
 		}
@@ -58,7 +59,7 @@ func (a *App) installCodebase(ctx context.Context, repo string, args []string) e
 		a.page("Connect a repository", "Scan and route a codebase through Brevitas.")
 		a.warn("The Brevitas codebase scanner is not installed.")
 		a.section("Install the scanner")
-		a.command("pip install agentmap-scan", "Install AgentMap")
+		a.command("pipx install agentmap-scan", "Install AgentMap (pipx: brew install pipx)")
 		a.command("bvx install "+repo, "Retry this repository")
 		return nil
 	}
@@ -118,15 +119,24 @@ func (a *App) agentmapCLI(ctx context.Context) string {
 	if p, err := exec.LookPath("agentmap"); err == nil {
 		return p
 	}
-	// agentmap-scan is typically installed alongside brevitas-systems; look for
-	// its console script next to the interpreter that can import brevitas.
+	names := []string{"agentmap"}
+	if runtime.GOOS == "windows" {
+		names = []string{"agentmap.exe", "agentmap"}
+	}
+	// The managed venv hosts the scanner even when brevitas-systems is not
+	// installed yet (scan-only first run), so check it before falling back to
+	// the interpreter that can import brevitas.
+	managedBin := filepath.Join(a.Dirs.Data, "python", "bin")
+	if runtime.GOOS == "windows" {
+		managedBin = filepath.Join(a.Dirs.Data, "python", "Scripts")
+	}
+	bins := []string{managedBin}
 	if py := optimizer.DetectPython(ctx, a.Cfg.Optimizer.PythonBin); py != "" {
-		names := []string{"agentmap"}
-		if runtime.GOOS == "windows" {
-			names = []string{"agentmap.exe", "agentmap"}
-		}
+		bins = append(bins, filepath.Dir(py))
+	}
+	for _, bin := range bins {
 		for _, name := range names {
-			cli := filepath.Join(filepath.Dir(py), name)
+			cli := filepath.Join(bin, name)
 			if _, err := os.Stat(cli); err == nil {
 				return cli
 			}
